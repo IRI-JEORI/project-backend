@@ -3,6 +3,9 @@ package com.nunnun.global.exception;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid credentials."),
+    INVALID_JWT(HttpStatus.UNAUTHORIZED, "INVALID_JWT", "Invalid token."),
+    EXPIRED_JWT(HttpStatus.UNAUTHORIZED, "EXPIRED_JWT", "Expired token."),
     VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "입력값이 올바르지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "잘못된 요청입니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "요청한 리소스를 찾을 수 없습니다."),
