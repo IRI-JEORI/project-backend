@@ -7,6 +7,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.springframework.stereotype.Component;
 
@@ -34,9 +35,17 @@ public class JwtTokenProvider {
     }
 
     public Long getUserIdFromAccessToken(String token) {
+        return getUserId(token, ACCESS_TOKEN_TYPE);
+    }
+
+    public Long getUserIdFromRefreshToken(String token) {
+        return getUserId(token, REFRESH_TOKEN_TYPE);
+    }
+
+    private Long getUserId(String token, String expectedTokenType) {
         Claims claims = parseClaims(token);
-        if (!ACCESS_TOKEN_TYPE.equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
-            throw new MalformedJwtException("The token is not an access token.");
+        if (!expectedTokenType.equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
+            throw new MalformedJwtException("The token type is invalid.");
         }
         try {
             return Long.valueOf(claims.getSubject());
@@ -49,6 +58,7 @@ public class JwtTokenProvider {
         Instant now = Instant.now();
         Instant expiresAt = now.plusMillis(expirationMilliseconds);
         String token = Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(userId.toString())
                 .claim(TOKEN_TYPE_CLAIM, tokenType)
                 .issuedAt(Date.from(now))

@@ -3,6 +3,8 @@ package com.nunnun.global.exception;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "Invalid refresh token."),
+    EXPIRED_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "EXPIRED_REFRESH_TOKEN", "Expired refresh token."),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid credentials."),
     INVALID_JWT(HttpStatus.UNAUTHORIZED, "INVALID_JWT", "Invalid token."),
     EXPIRED_JWT(HttpStatus.UNAUTHORIZED, "EXPIRED_JWT", "Expired token."),

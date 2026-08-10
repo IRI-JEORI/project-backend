@@ -51,6 +51,18 @@ public class RefreshToken {
         return new RefreshToken(user, tokenHash, expiresAt);
     }
 
+    public void revoke(LocalDateTime revokedAt) {
+        this.revokedAt = Objects.requireNonNull(revokedAt);
+    }
+
+    public boolean isRevoked() {
+        return revokedAt != null;
+    }
+
+    public boolean isExpiredAt(LocalDateTime now) {
+        return !expiresAt.isAfter(now);
+    }
+
     @PrePersist
     private void initializeCreatedAt() {
         this.createdAt = LocalDateTime.now();

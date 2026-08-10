@@ -4,6 +4,8 @@ import com.nunnun.auth.dto.SignUpRequest;
 import com.nunnun.auth.dto.SignUpResponse;
 import com.nunnun.auth.dto.LoginRequest;
 import com.nunnun.auth.dto.LoginResponse;
+import com.nunnun.auth.dto.LogoutRequest;
+import com.nunnun.auth.dto.TokenReissueRequest;
 import com.nunnun.auth.service.AuthService;
 import com.nunnun.global.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -32,5 +34,16 @@ public class AuthController {
     @PostMapping("/auth/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.login(request)));
+    }
+
+    @PostMapping("/auth/reissue")
+    public ResponseEntity<ApiResponse<LoginResponse>> reissue(@Valid @RequestBody TokenReissueRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.reissue(request)));
+    }
+
+    @PostMapping("/auth/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody LogoutRequest request) {
+        authService.logout(request);
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 }
