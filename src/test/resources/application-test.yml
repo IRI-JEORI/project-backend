@@ -8,3 +8,8 @@ spring:
     hibernate:
       ddl-auto: create-drop
     open-in-view: false
+
+jwt:
+  secret: ${JWT_SECRET:MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=}
+  access-expiration: 1800000
+  refresh-expiration: 1209600000
