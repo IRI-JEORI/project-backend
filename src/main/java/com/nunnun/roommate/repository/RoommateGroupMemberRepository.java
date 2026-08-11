@@ -21,5 +21,8 @@ public interface RoommateGroupMemberRepository extends JpaRepository<RoommateGro
     @Query("select m from RoommateGroupMember m join fetch m.user where m.roommateGroup.id = :groupId order by m.slotNo")
     List<RoommateGroupMember> findAllWithUserByRoommateGroupId(@Param("groupId") Long groupId);
 
+    @Query("select member.roommateGroup from RoommateGroupMember member where member.user.id = :userId")
+    List<com.nunnun.roommate.entity.RoommateGroup> findAllRoommateGroupsByUserId(@Param("userId") Long userId);
+
     long countByRoommateGroupId(Long groupId);
 }
