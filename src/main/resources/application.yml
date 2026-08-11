@@ -26,3 +26,10 @@ openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-5}
   timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:30}
+
+aws:
+  s3:
+    enabled: ${AWS_S3_ENABLED:false}
+    region: ${AWS_REGION:}
+    bucket: ${AWS_S3_BUCKET:}
+    wake-proof-cleanup-fixed-delay-ms: ${WAKE_PROOF_CLEANUP_FIXED_DELAY_MS:300000}
