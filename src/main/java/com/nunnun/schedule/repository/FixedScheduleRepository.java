@@ -1,0 +1,13 @@
+package com.nunnun.schedule.repository;
+
+import com.nunnun.schedule.entity.FixedSchedule;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface FixedScheduleRepository extends JpaRepository<FixedSchedule, Long> {
+
+    List<FixedSchedule> findAllByUserId(Long userId);
+
+    Optional<FixedSchedule> findByIdAndUserId(Long id, Long userId);
+}
