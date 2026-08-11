@@ -6,6 +6,7 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found."),
     FIXED_SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "FIXED_SCHEDULE_NOT_FOUND", "Fixed schedule not found."),
     INVALID_FIXED_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_FIXED_SCHEDULE_TIME", "Start time must be before end time."),
+    SLEEP_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "SLEEP_FEEDBACK_ALREADY_EXISTS", "Sleep feedback already exists for today."),
     INVALID_TIMETABLE_IMAGE(HttpStatus.BAD_REQUEST, "INVALID_TIMETABLE_IMAGE", "Invalid timetable image."),
     SCHEDULE_ANALYSIS_FAILED(HttpStatus.BAD_GATEWAY, "SCHEDULE_ANALYSIS_FAILED", "Schedule analysis failed."),
     INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "Invalid refresh token."),
