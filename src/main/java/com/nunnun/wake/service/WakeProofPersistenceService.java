@@ -53,6 +53,9 @@ public class WakeProofPersistenceService {
     }
 
     private void validateReceiverAndProof(WakeRequest request, Long userId) {
+        if (request.getReceiver().isDeleted()) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
         if (!request.getReceiver().getId().equals(userId)) {
             throw new BusinessException(ErrorCode.WAKE_REQUEST_ACCESS_DENIED);
         }

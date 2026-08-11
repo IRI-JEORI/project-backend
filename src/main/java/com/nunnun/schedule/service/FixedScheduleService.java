@@ -73,6 +73,7 @@ public class FixedScheduleService {
 
     @Transactional
     public FixedScheduleResponse updateFixedSchedule(Long userId, Long scheduleId, UpdateFixedScheduleRequest request) {
+        findActiveUser(userId);
         FixedSchedule schedule = findOwnedSchedule(scheduleId, userId);
         String title = request.title() != null ? request.title() : schedule.getTitle();
         DayOfWeek dayOfWeek = request.dayOfWeek() != null ? request.dayOfWeek() : schedule.getDayOfWeek();
@@ -85,6 +86,7 @@ public class FixedScheduleService {
 
     @Transactional
     public void deleteFixedSchedule(Long userId, Long scheduleId) {
+        findActiveUser(userId);
         fixedScheduleRepository.delete(findOwnedSchedule(scheduleId, userId));
     }
 

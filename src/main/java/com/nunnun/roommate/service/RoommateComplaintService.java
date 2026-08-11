@@ -10,6 +10,7 @@ import com.nunnun.roommate.entity.RoommateGroupStatus;
 import com.nunnun.roommate.repository.RoommateComplaintRepository;
 import com.nunnun.roommate.repository.RoommateGroupMemberRepository;
 import com.nunnun.roommate.repository.RoommateGroupRepository;
+import com.nunnun.user.repository.UserRepository;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -22,22 +23,26 @@ public class RoommateComplaintService {
     private final RoommateComplaintRepository complaints;
     private final RoommateBehaviorManualGenerator manualGenerator;
     private final RoommateComplaintPersistenceService persistenceService;
+    private final UserRepository users;
 
     public RoommateComplaintService(
             RoommateGroupRepository groups,
             RoommateGroupMemberRepository members,
             RoommateComplaintRepository complaints,
             RoommateBehaviorManualGenerator manualGenerator,
-            RoommateComplaintPersistenceService persistenceService
+            RoommateComplaintPersistenceService persistenceService,
+            UserRepository users
     ) {
         this.groups = groups;
         this.members = members;
         this.complaints = complaints;
         this.manualGenerator = manualGenerator;
         this.persistenceService = persistenceService;
+        this.users = users;
     }
 
     public Long create(Long authorId, Long groupId, String content) {
+        requireActiveUser(authorId);
         Target target = findAvailableTarget(authorId, groupId);
         List<String> complaintContents = complaintContents(groupId, target.userId());
         complaintContents.add(content);
@@ -46,6 +51,7 @@ public class RoommateComplaintService {
     }
 
     public Long update(Long authorId, Long complaintId, String content) {
+        requireActiveUser(authorId);
         RoommateComplaint complaint = complaints.findByIdWithAssociations(complaintId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_COMPLAINT_NOT_FOUND));
         if (!complaint.getAuthor().getId().equals(authorId)
@@ -94,6 +100,11 @@ public class RoommateComplaintService {
                 .stream()
                 .map(existing -> existing.getId().equals(complaintId) ? newContent : existing.getContent())
                 .toList();
+    }
+
+    private void requireActiveUser(Long userId) {
+        users.findByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
     private record Target(Long userId) {

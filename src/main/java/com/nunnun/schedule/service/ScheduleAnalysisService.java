@@ -6,6 +6,7 @@ import com.nunnun.schedule.ai.AnalyzedFixedSchedule;
 import com.nunnun.schedule.ai.ScheduleAnalyzer;
 import com.nunnun.schedule.dto.ScheduleAnalysisItem;
 import com.nunnun.schedule.dto.ScheduleAnalysisResponse;
+import com.nunnun.user.repository.UserRepository;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
@@ -21,12 +22,16 @@ public class ScheduleAnalysisService {
     private static final Set<String> SUPPORTED_IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     private final ScheduleAnalyzer scheduleAnalyzer;
+    private final UserRepository userRepository;
 
-    public ScheduleAnalysisService(ScheduleAnalyzer scheduleAnalyzer) {
+    public ScheduleAnalysisService(ScheduleAnalyzer scheduleAnalyzer, UserRepository userRepository) {
         this.scheduleAnalyzer = scheduleAnalyzer;
+        this.userRepository = userRepository;
     }
 
-    public ScheduleAnalysisResponse analyze(MultipartFile image) {
+    public ScheduleAnalysisResponse analyze(Long userId, MultipartFile image) {
+        userRepository.findByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         validateImage(image);
         try {
             List<ScheduleAnalysisItem> schedules = scheduleAnalyzer.analyze(image.getBytes(), image.getContentType()).stream()

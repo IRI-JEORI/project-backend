@@ -64,6 +64,7 @@ public class WakeRequestService {
 
     @Transactional(readOnly = true)
     public WakeRequestDetailResponse getWakeRequest(Long userId, Long requestId) {
+        findActiveUser(userId);
         WakeRequest request = wakeRequestRepository.findDetailById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_REQUEST_NOT_FOUND));
         if (!request.getSender().getId().equals(userId) && !request.getReceiver().getId().equals(userId)) {

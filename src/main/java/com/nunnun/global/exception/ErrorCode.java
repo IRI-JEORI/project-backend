@@ -28,6 +28,7 @@ public enum ErrorCode {
     ROOMMATE_GROUP_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "ROOMMATE_GROUP_MEMBER_NOT_FOUND", "Roommate group member not found."),
     ROOMMATE_NOT_AVAILABLE(HttpStatus.CONFLICT, "ROOMMATE_NOT_AVAILABLE", "An active roommate is required."),
     ROOMMATE_COMPLAINT_NOT_FOUND(HttpStatus.NOT_FOUND, "ROOMMATE_COMPLAINT_NOT_FOUND", "Roommate complaint not found."),
+    ROOMMATE_BEHAVIOR_MANUAL_NOT_FOUND(HttpStatus.NOT_FOUND, "ROOMMATE_BEHAVIOR_MANUAL_NOT_FOUND", "Roommate behavior manual not found."),
     BEHAVIOR_MANUAL_GENERATION_FAILED(HttpStatus.BAD_GATEWAY, "BEHAVIOR_MANUAL_GENERATION_FAILED", "Failed to generate behavior manual."),
     INVALID_TIMETABLE_IMAGE(HttpStatus.BAD_REQUEST, "INVALID_TIMETABLE_IMAGE", "Invalid timetable image."),
     SCHEDULE_ANALYSIS_FAILED(HttpStatus.BAD_GATEWAY, "SCHEDULE_ANALYSIS_FAILED", "Schedule analysis failed."),

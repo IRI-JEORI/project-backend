@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -140,6 +142,53 @@ class RoommateComplaintControllerTest {
                 .isEqualTo("Guide for A.");
         assertThat(manuals.findByRoommateGroupIdAndTargetUserId(group.getId(), b.getId()).orElseThrow().getContent())
                 .isEqualTo("Guide for B.");
+    }
+
+    @Test
+    void returnsOnlyTheAuthenticatedMembersOwnBehaviorManual() throws Exception {
+        User author = user("author@example.com");
+        User target = user("target@example.com");
+        User outsider = user("outsider@example.com");
+        RoommateGroup group = activeGroup(author, target);
+        when(manualGenerator.generate(anyList())).thenReturn("Use headphones after 10 PM.");
+        mvc.perform(post("/roommate-groups/{id}/complaints", group.getId()).header("Authorization", token(author))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"Music is loud at night.\"}"));
+
+        mvc.perform(get("/roommate-groups/{id}/sleep-manual", group.getId())
+                        .header("Authorization", token(target)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").value("Use headphones after 10 PM."))
+                .andExpect(jsonPath("$.data.generatedAt").exists())
+                .andExpect(jsonPath("$.data.updatedAt").exists())
+                .andExpect(jsonPath("$.data.complaints").doesNotExist());
+        mvc.perform(get("/roommate-groups/{id}/sleep-manual", group.getId())
+                        .header("Authorization", token(author)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ROOMMATE_BEHAVIOR_MANUAL_NOT_FOUND"));
+        mvc.perform(get("/roommate-groups/{id}/sleep-manual", group.getId())
+                        .header("Authorization", token(outsider)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deletesComplaintsAndManualsWhenTheLastRoommateLeaves() throws Exception {
+        User author = user("author@example.com");
+        User target = user("target@example.com");
+        RoommateGroup group = activeGroup(author, target);
+        when(manualGenerator.generate(anyList())).thenReturn("Shared living guide.");
+        mvc.perform(post("/roommate-groups/{id}/complaints", group.getId()).header("Authorization", token(author))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"Complaint.\"}"));
+
+        mvc.perform(delete("/roommate-groups/{id}/members/me", group.getId())
+                        .header("Authorization", token(author)))
+                .andExpect(status().isOk());
+        mvc.perform(delete("/roommate-groups/{id}/members/me", group.getId())
+                        .header("Authorization", token(target)))
+                .andExpect(status().isOk());
+
+        assertThat(groups.findById(group.getId())).isEmpty();
+        assertThat(complaints.count()).isZero();
+        assertThat(manuals.count()).isZero();
     }
 
     @Test

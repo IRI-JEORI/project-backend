@@ -19,4 +19,6 @@ public interface RoommateComplaintRepository extends JpaRepository<RoommateCompl
             where c.id = :complaintId
             """)
     Optional<RoommateComplaint> findByIdWithAssociations(@Param("complaintId") Long complaintId);
+
+    void deleteAllByRoommateGroupId(Long roommateGroupId);
 }

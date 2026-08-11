@@ -64,6 +64,7 @@ public class WakeGroupService {
 
     @Transactional(readOnly = true)
     public InviteCodeResponse getInviteCode(Long userId, Long groupId) {
+        findActiveUser(userId);
         WakeGroup group = wakeGroupRepository.findById(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, userId)) {
@@ -74,6 +75,7 @@ public class WakeGroupService {
 
     @Transactional
     public void leaveWakeGroup(Long userId, Long groupId) {
+        findActiveUser(userId);
         WakeGroupMember member = wakeGroupMemberRepository.findByWakeGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_MEMBER_NOT_FOUND));
         wakeGroupMemberRepository.delete(member);

@@ -47,7 +47,7 @@ public class FixedScheduleController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestPart(value = "image", required = false) MultipartFile image
     ) {
-        return ResponseEntity.ok(ApiResponse.success(scheduleAnalysisService.analyze(image)));
+        return ResponseEntity.ok(ApiResponse.success(scheduleAnalysisService.analyze(user.userId(), image)));
     }
 
     @PostMapping("/import")

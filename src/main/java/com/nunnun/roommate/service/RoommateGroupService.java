@@ -8,6 +8,8 @@ import com.nunnun.roommate.entity.RoommateGroupMember;
 import com.nunnun.roommate.entity.RoommateGroupStatus;
 import com.nunnun.roommate.repository.RoommateGroupMemberRepository;
 import com.nunnun.roommate.repository.RoommateGroupRepository;
+import com.nunnun.roommate.repository.RoommateBehaviorManualRepository;
+import com.nunnun.roommate.repository.RoommateComplaintRepository;
 import com.nunnun.routine.entity.DailyRoutine;
 import com.nunnun.routine.repository.DailyRoutineRepository;
 import com.nunnun.schedule.dto.FixedScheduleResponse;
@@ -39,12 +41,17 @@ public class RoommateGroupService {
     private final DailyRoutineRepository routines;
     private final FixedScheduleRepository schedules;
     private final SleepSessionRepository sleepSessions;
+    private final RoommateBehaviorManualRepository behaviorManuals;
+    private final RoommateComplaintRepository complaints;
     private final Clock clock;
 
     public RoommateGroupService(RoommateGroupRepository groups, RoommateGroupMemberRepository members,
                                 UserRepository users, InviteCodeGenerator codes,
                                 DailyRoutineRepository routines, FixedScheduleRepository schedules,
-                                SleepSessionRepository sleepSessions, Clock clock) {
+                                SleepSessionRepository sleepSessions,
+                                RoommateBehaviorManualRepository behaviorManuals,
+                                RoommateComplaintRepository complaints,
+                                Clock clock) {
         this.groups = groups;
         this.members = members;
         this.users = users;
@@ -52,6 +59,8 @@ public class RoommateGroupService {
         this.routines = routines;
         this.schedules = schedules;
         this.sleepSessions = sleepSessions;
+        this.behaviorManuals = behaviorManuals;
+        this.complaints = complaints;
         this.clock = clock;
     }
 
@@ -82,6 +91,7 @@ public class RoommateGroupService {
 
     @Transactional(readOnly = true)
     public RoommateGroupDetailResponse getDetail(Long userId, Long groupId) {
+        user(userId);
         RoommateGroup group = groups.findById(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
         List<RoommateGroupMember> groupMembers = members.findAllWithUserByRoommateGroupId(groupId);
@@ -109,19 +119,24 @@ public class RoommateGroupService {
 
     @Transactional
     public void leave(Long userId, Long groupId) {
+        user(userId);
         RoommateGroupMember member = members.findByRoommateGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_MEMBER_NOT_FOUND));
         RoommateGroup group = member.getRoommateGroup();
         members.delete(member);
-        if (members.countByRoommateGroupId(groupId) == 1) {
+        long remainingMemberCount = members.countByRoommateGroupId(groupId);
+        if (remainingMemberCount == 1) {
             group.waitForRoommate();
-        } else if (members.countByRoommateGroupId(groupId) == 0) {
+        } else if (remainingMemberCount == 0) {
+            behaviorManuals.deleteAllByRoommateGroupId(groupId);
+            complaints.deleteAllByRoommateGroupId(groupId);
             groups.delete(group);
         }
     }
 
     @Transactional(readOnly = true)
     public String invite(Long userId, Long groupId) {
+        user(userId);
         if (!members.existsByRoommateGroupIdAndUserId(groupId, userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
