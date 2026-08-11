@@ -4,6 +4,7 @@ import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
 import com.nunnun.schedule.dto.CreateFixedScheduleRequest;
 import com.nunnun.schedule.dto.FixedScheduleResponse;
+import com.nunnun.schedule.dto.ImportFixedSchedulesResponse;
 import com.nunnun.schedule.dto.UpdateFixedScheduleRequest;
 import com.nunnun.schedule.entity.FixedSchedule;
 import com.nunnun.schedule.repository.FixedScheduleRepository;
@@ -50,6 +51,24 @@ public class FixedScheduleService {
                 request.endTime()
         ));
         return FixedScheduleResponse.from(schedule);
+    }
+
+    @Transactional
+    public ImportFixedSchedulesResponse importFixedSchedules(Long userId, List<CreateFixedScheduleRequest> requests) {
+        requests.forEach(request -> validateTimeRange(request.startTime(), request.endTime()));
+        User user = findActiveUser(userId);
+        List<FixedSchedule> schedules = requests.stream()
+                .map(request -> FixedSchedule.create(
+                        user,
+                        request.title(),
+                        request.dayOfWeek(),
+                        request.startTime(),
+                        request.endTime()
+                ))
+                .toList();
+        return new ImportFixedSchedulesResponse(fixedScheduleRepository.saveAll(schedules).stream()
+                .map(FixedScheduleResponse::from)
+                .toList());
     }
 
     @Transactional
