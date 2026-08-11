@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.nunnun.auth.repository.RefreshTokenRepository;
 import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
+import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
 import com.nunnun.user.entity.User;
@@ -68,6 +69,7 @@ class WakeRequestControllerTest {
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
     @Autowired private WakeProofCleanupService wakeProofCleanupService;
+    @Autowired private NotificationRepository notificationRepository;
     @Autowired private SleepFeedbackRepository sleepFeedbackRepository;
     @Autowired private SleepSessionRepository sleepSessionRepository;
     @Autowired private DeviceRepository deviceRepository;
@@ -230,6 +232,7 @@ class WakeRequestControllerTest {
     }
 
     private void clearData() {
+        notificationRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
         wakeGroupMemberRepository.deleteAllInBatch();

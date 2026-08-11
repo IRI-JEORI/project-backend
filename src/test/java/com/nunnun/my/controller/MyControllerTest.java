@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nunnun.auth.repository.RefreshTokenRepository;
 import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
+import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.routine.entity.DailyRoutine;
 import com.nunnun.routine.repository.DailyRoutineRepository;
 import com.nunnun.schedule.entity.FixedSchedule;
@@ -53,6 +54,7 @@ class MyControllerTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private DailyRoutineRepository dailyRoutineRepository;
+    @Autowired private NotificationRepository notificationRepository;
     @Autowired private FixedScheduleRepository fixedScheduleRepository;
     @Autowired private DeviceRepository deviceRepository;
     @Autowired private RefreshTokenRepository refreshTokenRepository;
@@ -62,6 +64,7 @@ class MyControllerTest {
 
     @BeforeEach
     void setUp() {
+        notificationRepository.deleteAllInBatch();
         dailyRoutineRepository.deleteAllInBatch();
         fixedScheduleRepository.deleteAllInBatch();
         deviceRepository.deleteAllInBatch();

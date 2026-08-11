@@ -2,6 +2,7 @@ package com.nunnun.routine.service;
 
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
+import com.nunnun.notification.service.NotificationService;
 import com.nunnun.routine.entity.DailyRoutine;
 import com.nunnun.routine.repository.DailyRoutineRepository;
 import com.nunnun.user.entity.User;
@@ -20,15 +21,18 @@ public class DailyRoutineService {
     private final DailyRoutineRepository dailyRoutineRepository;
     private final UserRepository userRepository;
     private final Clock clock;
+    private final NotificationService notificationService;
 
     public DailyRoutineService(
             DailyRoutineRepository dailyRoutineRepository,
             UserRepository userRepository,
-            Clock clock
+            Clock clock,
+            NotificationService notificationService
     ) {
         this.dailyRoutineRepository = dailyRoutineRepository;
         this.userRepository = userRepository;
         this.clock = clock;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -41,13 +45,16 @@ public class DailyRoutineService {
     public DailyRoutine updateTargetBedTime(Long userId, LocalTime targetBedTime) {
         DailyRoutine routine = findOrCreateTodayRoutine(userId);
         routine.changeTargetBedTime(targetBedTime);
+        notificationService.scheduleBedtimeReminder(routine);
         return routine;
     }
 
     @Transactional
     public DailyRoutine updateEstimatedReturnTime(Long userId, LocalTime estimatedReturnTime) {
         DailyRoutine routine = findOrCreateTodayRoutine(userId);
+        LocalTime previousReturnTime = routine.getEstimatedReturnTime();
         routine.changeEstimatedReturnTime(estimatedReturnTime, LocalDateTime.now(clock));
+        notificationService.createReturnTimeChanged(routine.getUser(), routine, previousReturnTime);
         return routine;
     }
 

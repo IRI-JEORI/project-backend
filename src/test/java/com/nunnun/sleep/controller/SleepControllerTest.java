@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.nunnun.auth.repository.RefreshTokenRepository;
 import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
+import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.sleep.entity.SleepFeedback;
 import com.nunnun.sleep.entity.SleepScore;
 import com.nunnun.sleep.entity.SleepSession;
@@ -49,6 +50,7 @@ class SleepControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private SleepSessionRepository sleepSessionRepository;
+    @Autowired private NotificationRepository notificationRepository;
     @Autowired private SleepFeedbackRepository sleepFeedbackRepository;
     @Autowired private DeviceRepository deviceRepository;
     @Autowired private RefreshTokenRepository refreshTokenRepository;
@@ -67,6 +69,7 @@ class SleepControllerTest {
     }
 
     private void clearData() {
+        notificationRepository.deleteAllInBatch();
         sleepFeedbackRepository.deleteAllInBatch();
         sleepSessionRepository.deleteAllInBatch();
         deviceRepository.deleteAllInBatch();

@@ -2,6 +2,7 @@ package com.nunnun.sleep.service;
 
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
+import com.nunnun.notification.service.NotificationService;
 import com.nunnun.sleep.dto.CreateSleepFeedbackResponse;
 import com.nunnun.sleep.dto.CreateSleepSessionResponse;
 import com.nunnun.sleep.entity.SleepFeedback;
@@ -25,17 +26,20 @@ public class SleepService {
     private final SleepFeedbackRepository sleepFeedbackRepository;
     private final UserRepository userRepository;
     private final Clock clock;
+    private final NotificationService notificationService;
 
     public SleepService(
             SleepSessionRepository sleepSessionRepository,
             SleepFeedbackRepository sleepFeedbackRepository,
             UserRepository userRepository,
-            Clock clock
+            Clock clock,
+            NotificationService notificationService
     ) {
         this.sleepSessionRepository = sleepSessionRepository;
         this.sleepFeedbackRepository = sleepFeedbackRepository;
         this.userRepository = userRepository;
         this.clock = clock;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -43,6 +47,8 @@ public class SleepService {
         User user = findActiveUser(userId);
         LocalDateTime now = LocalDateTime.now(clock);
         SleepSession session = sleepSessionRepository.save(SleepSession.create(user, now.toLocalDate(), now));
+        notificationService.cancelPendingBedtimeReminders(userId);
+        notificationService.createRoommateSleeping(user, session);
         return new CreateSleepSessionResponse(session.getId(), session.getSleepDate(), session.getStartedAt());
     }
 

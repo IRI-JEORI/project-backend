@@ -2,6 +2,7 @@ package com.nunnun.wake.service;
 
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
+import com.nunnun.notification.service.NotificationService;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.dto.CreateWakeRequestResponse;
@@ -24,19 +25,22 @@ public class WakeRequestService {
     private final WakeRequestRepository wakeRequestRepository;
     private final UserRepository userRepository;
     private final Clock clock;
+    private final NotificationService notificationService;
 
     public WakeRequestService(
             WakeGroupRepository wakeGroupRepository,
             WakeGroupMemberRepository wakeGroupMemberRepository,
             WakeRequestRepository wakeRequestRepository,
             UserRepository userRepository,
-            Clock clock
+            Clock clock,
+            NotificationService notificationService
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
         this.wakeRequestRepository = wakeRequestRepository;
         this.userRepository = userRepository;
         this.clock = clock;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -59,6 +63,7 @@ public class WakeRequestService {
             throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
         }
         WakeRequest request = wakeRequestRepository.save(WakeRequest.send(group, sender, receiver, now));
+        notificationService.createWakeRequest(request);
         return new CreateWakeRequestResponse(request.getId(), request.getStatus(), request.getRequestedAt());
     }
 

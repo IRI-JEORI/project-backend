@@ -33,3 +33,11 @@ aws:
     region: ${AWS_REGION:}
     bucket: ${AWS_S3_BUCKET:}
     wake-proof-cleanup-fixed-delay-ms: ${WAKE_PROOF_CLEANUP_FIXED_DELAY_MS:300000}
+
+firebase:
+  enabled: ${FIREBASE_ENABLED:false}
+  project-id: ${FIREBASE_PROJECT_ID:}
+
+notification:
+  dispatcher-fixed-delay-ms: ${NOTIFICATION_DISPATCHER_FIXED_DELAY_MS:30000}
+  dispatcher-initial-delay-ms: ${NOTIFICATION_DISPATCHER_INITIAL_DELAY_MS:30000}
