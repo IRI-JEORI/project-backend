@@ -10,6 +10,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.nunnun.user.repository.UserRepository;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class JwtAuthenticationFilterTest {
 
@@ -23,9 +26,12 @@ class JwtAuthenticationFilterTest {
     @Test
     void populatesSecurityContextFromValidAccessToken() throws Exception {
         JwtTokenProvider tokenProvider = tokenProvider();
+        UserRepository users = mock(UserRepository.class);
+        when(users.existsByIdAndDeletedAtIsNull(1L)).thenReturn(true);
         JwtAuthenticationFilter filter = new JwtAuthenticationFilter(
                 tokenProvider,
-                new JwtAuthenticationEntryPoint(new ObjectMapper())
+                new JwtAuthenticationEntryPoint(new ObjectMapper()),
+                users
         );
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer " + tokenProvider.createAccessToken(1L).token());
@@ -42,7 +48,8 @@ class JwtAuthenticationFilterTest {
     void returnsCommonErrorForMalformedToken() throws Exception {
         JwtAuthenticationFilter filter = new JwtAuthenticationFilter(
                 tokenProvider(),
-                new JwtAuthenticationEntryPoint(new ObjectMapper())
+                new JwtAuthenticationEntryPoint(new ObjectMapper()),
+                mock(UserRepository.class)
         );
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();

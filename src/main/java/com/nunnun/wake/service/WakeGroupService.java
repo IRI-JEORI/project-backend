@@ -14,6 +14,9 @@ import com.nunnun.wake.repository.WakeGroupRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,23 +31,29 @@ public class WakeGroupService {
     private final WakeGroupMemberRepository wakeGroupMemberRepository;
     private final UserRepository userRepository;
     private final InviteCodeGenerator inviteCodeGenerator;
+    private final Clock clock;
 
     public WakeGroupService(
             WakeGroupRepository wakeGroupRepository,
             WakeGroupMemberRepository wakeGroupMemberRepository,
             UserRepository userRepository,
-            InviteCodeGenerator inviteCodeGenerator
+            InviteCodeGenerator inviteCodeGenerator,
+            Clock clock
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
         this.userRepository = userRepository;
         this.inviteCodeGenerator = inviteCodeGenerator;
+        this.clock = clock;
     }
 
     @Transactional
     public CreateWakeGroupResponse createWakeGroup(Long userId, String name) {
         User creator = findActiveUser(userId);
-        WakeGroup group = wakeGroupRepository.save(WakeGroup.create(name, generateAvailableInviteCode(), creator));
+        LocalDateTime now = nowUtc();
+        WakeGroup group = wakeGroupRepository.save(WakeGroup.create(
+                name, generateAvailableInviteCode(), now.plusHours(24), creator
+        ));
         wakeGroupMemberRepository.save(WakeGroupMember.join(group, creator, FIRST_SLOT));
         return new CreateWakeGroupResponse(group.getId(), group.getName());
     }
@@ -53,6 +62,9 @@ public class WakeGroupService {
     public JoinWakeGroupResponse joinWakeGroup(Long userId, String inviteCode) {
         WakeGroup group = wakeGroupRepository.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
+        if (group.isInviteCodeExpiredAt(nowUtc())) {
+            throw new BusinessException(ErrorCode.INVITE_CODE_EXPIRED);
+        }
         User user = findActiveUser(userId);
         if (wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(group.getId(), userId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_ALREADY_JOINED);
@@ -69,14 +81,44 @@ public class WakeGroupService {
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        return new InviteCodeResponse(group.getInviteCode());
+        return inviteResponse(group);
+    }
+
+    @Transactional
+    public InviteCodeResponse reissueInviteCode(Long userId, Long groupId) {
+        findActiveUser(userId);
+        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
+        if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        group.reissueInviteCode(generateAvailableInviteCode(), nowUtc().plusHours(24));
+        return inviteResponse(group);
     }
 
     @Transactional
     public void leaveWakeGroup(Long userId, Long groupId) {
+        findActiveUser(userId);
+        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
         WakeGroupMember member = wakeGroupMemberRepository.findByWakeGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_MEMBER_NOT_FOUND));
         wakeGroupMemberRepository.delete(member);
+        wakeGroupMemberRepository.flush();
+        if (wakeGroupMemberRepository.findAllByWakeGroupId(groupId).isEmpty()) {
+            group.invalidateInviteCode();
+        }
+    }
+
+    private LocalDateTime nowUtc() {
+        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+    }
+
+    private InviteCodeResponse inviteResponse(WakeGroup group) {
+        return new InviteCodeResponse(
+                group.getInviteCode(),
+                group.getInviteCodeExpiresAt() == null ? null : group.getInviteCodeExpiresAt().toInstant(ZoneOffset.UTC)
+        );
     }
 
     private User findActiveUser(Long userId) {

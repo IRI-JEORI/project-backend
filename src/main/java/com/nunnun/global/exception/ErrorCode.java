@@ -12,6 +12,7 @@ public enum ErrorCode {
     WAKE_GROUP_FULL(HttpStatus.CONFLICT, "WAKE_GROUP_FULL", "Wake group is full."),
     WAKE_GROUP_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_GROUP_MEMBER_NOT_FOUND", "Wake group member not found."),
     INVITE_CODE_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "INVITE_CODE_GENERATION_FAILED", "Failed to generate invite code."),
+    INVITE_CODE_EXPIRED(HttpStatus.CONFLICT, "INVITE_CODE_EXPIRED", "Invite code has expired."),
     WAKE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_REQUEST_NOT_FOUND", "Wake request not found."),
     CANNOT_WAKE_SELF(HttpStatus.BAD_REQUEST, "CANNOT_WAKE_SELF", "Cannot wake yourself."),
     WAKE_GROUP_SENDER_NOT_MEMBER(HttpStatus.FORBIDDEN, "WAKE_GROUP_SENDER_NOT_MEMBER", "Sender is not a wake group member."),

@@ -3,9 +3,6 @@ package com.nunnun.notification.service;
 import com.nunnun.device.entity.DevicePlatform;
 import com.nunnun.device.entity.UserDevice;
 import com.nunnun.device.repository.DeviceRepository;
-import com.nunnun.notification.push.PushMessage;
-import com.nunnun.notification.push.PushSendResult;
-import com.nunnun.notification.push.PushSender;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,22 +16,19 @@ import org.springframework.stereotype.Service;
 public class NotificationDispatcher {
 
     private final NotificationQueryService queryService;
-    private final NotificationDispatchPersistenceService persistenceService;
+    private final NotificationDispatchExecutor dispatchExecutor;
     private final DeviceRepository devices;
-    private final PushSender pushSender;
     private final Clock clock;
 
     public NotificationDispatcher(
             NotificationQueryService queryService,
-            NotificationDispatchPersistenceService persistenceService,
+            NotificationDispatchExecutor dispatchExecutor,
             DeviceRepository devices,
-            PushSender pushSender,
             Clock clock
     ) {
         this.queryService = queryService;
-        this.persistenceService = persistenceService;
+        this.dispatchExecutor = dispatchExecutor;
         this.devices = devices;
-        this.pushSender = pushSender;
         this.clock = clock;
     }
 
@@ -60,32 +54,11 @@ public class NotificationDispatcher {
                 ));
 
         for (NotificationDispatchTarget notification : dueNotifications) {
-            dispatch(notification, tokensByUserId.getOrDefault(notification.userId(), List.of()), now);
-        }
-    }
-
-    private void dispatch(NotificationDispatchTarget notification, List<String> fcmTokens, LocalDateTime now) {
-        if (fcmTokens.isEmpty()) {
-            persistenceService.markFailed(notification.notificationId());
-            return;
-        }
-        try {
-            PushSendResult result = pushSender.send(
-                    new PushMessage(
-                            notification.title(),
-                            notification.body(),
-                            notification.type(),
-                            notification.referenceId()
-                    ),
-                    fcmTokens
+            dispatchExecutor.dispatch(
+                    notification.notificationId(),
+                    tokensByUserId.getOrDefault(notification.userId(), List.of()),
+                    now
             );
-            if (result.hasSuccess()) {
-                persistenceService.markSent(notification.notificationId(), now);
-            } else {
-                persistenceService.markFailed(notification.notificationId());
-            }
-        } catch (RuntimeException exception) {
-            persistenceService.markFailed(notification.notificationId());
         }
     }
 }

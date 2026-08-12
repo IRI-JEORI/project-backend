@@ -17,4 +17,8 @@ public interface WakeGroupRepository extends JpaRepository<WakeGroup, Long> {
     Optional<WakeGroup> findByInviteCodeForUpdate(@Param("inviteCode") String inviteCode);
 
     boolean existsByInviteCode(String inviteCode);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select wakeGroup from WakeGroup wakeGroup where wakeGroup.id = :id")
+    Optional<WakeGroup> findByIdForUpdate(@Param("id") Long id);
 }

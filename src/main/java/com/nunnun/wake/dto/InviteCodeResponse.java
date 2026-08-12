@@ -1,4 +1,6 @@
 package com.nunnun.wake.dto;
 
-public record InviteCodeResponse(String inviteCode) {
+import java.time.Instant;
+
+public record InviteCodeResponse(String inviteCode, Instant expiresAt) {
 }

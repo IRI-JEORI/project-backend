@@ -13,6 +13,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import com.nunnun.user.repository.UserRepository;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -22,11 +23,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+    private final UserRepository userRepository;
 
     public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider,
-                                   JwtAuthenticationEntryPoint authenticationEntryPoint) {
+                                   JwtAuthenticationEntryPoint authenticationEntryPoint,
+                                   UserRepository userRepository) {
         this.jwtTokenProvider = jwtTokenProvider;
         this.authenticationEntryPoint = authenticationEntryPoint;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -40,6 +44,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             Long userId = jwtTokenProvider.getUserIdFromAccessToken(token);
+            if (!userRepository.existsByIdAndDeletedAtIsNull(userId)) {
+                throw new JwtAuthenticationException(ErrorCode.INVALID_JWT);
+            }
             AuthenticatedUser principal = new AuthenticatedUser(userId);
             SecurityContextHolder.getContext().setAuthentication(
                     new UsernamePasswordAuthenticationToken(principal, null, List.of())
@@ -49,7 +56,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.clearContext();
             authenticationEntryPoint.commence(request, response,
                     new JwtAuthenticationException(ErrorCode.EXPIRED_JWT));
-        } catch (JwtException | IllegalArgumentException exception) {
+        } catch (JwtException | IllegalArgumentException | JwtAuthenticationException exception) {
             SecurityContextHolder.clearContext();
             authenticationEntryPoint.commence(request, response,
                     new JwtAuthenticationException(ErrorCode.INVALID_JWT));

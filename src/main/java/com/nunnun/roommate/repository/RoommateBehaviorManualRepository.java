@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RoommateBehaviorManualRepository extends JpaRepository<RoommateBehaviorManual, Long> {
     Optional<RoommateBehaviorManual> findByRoommateGroupIdAndTargetUserId(Long roommateGroupId, Long targetUserId);
+
+    void deleteAllByTargetUserId(Long targetUserId);
 }

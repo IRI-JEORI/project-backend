@@ -128,6 +128,9 @@ class NotificationDomainIntegrationTest {
         User sleepingUser = user("a@example.com", "Alice");
         User roommate = user("b@example.com", "Bob");
         activeRoommateGroup(sleepingUser, roommate);
+        DailyRoutine sleepRoutine = routines.saveAndFlush(DailyRoutine.create(sleepingUser, TODAY));
+        sleepRoutine.changeTargetWakeTime(LocalTime.of(7, 30));
+        routines.saveAndFlush(sleepRoutine);
         myService.updateBedTime(sleepingUser.getId(), LocalTime.of(23, 30));
         Notification reminder = notifications.findAll().getFirst();
 
@@ -166,14 +169,15 @@ class NotificationDomainIntegrationTest {
         activeRoommateGroup(changedUser, roommate);
 
         myService.updateReturnTime(changedUser.getId(), LocalTime.of(21, 15));
-        myService.updateReturnTime(changedUser.getId(), LocalTime.of(21, 15));
+        myService.updateReturnTime(changedUser.getId(), LocalTime.of(21, 16));
+        myService.updateReturnTime(changedUser.getId(), LocalTime.of(21, 16));
 
         assertThat(notifications.findAll()).singleElement().satisfies(notification -> {
             DailyRoutine routine = routines.findByUserIdAndRoutineDate(changedUser.getId(), TODAY).orElseThrow();
             assertThat(notification.getUser().getId()).isEqualTo(roommate.getId());
             assertThat(notification.getType()).isEqualTo(NotificationType.RETURN_TIME_CHANGED);
             assertThat(notification.getReferenceId()).isEqualTo(routine.getId());
-            assertThat(notification.getBody()).contains("21:15");
+            assertThat(notification.getBody()).contains("21:16");
         });
         verifyNoInteractions(pushSender);
     }
@@ -181,6 +185,9 @@ class NotificationDomainIntegrationTest {
     @Test
     void bedtimeChangeCancelsOnlyPendingReminderAndSchedulesNewTime() {
         User user = user("user@example.com", "User");
+        DailyRoutine wakeRoutine = routines.saveAndFlush(DailyRoutine.create(user, TODAY));
+        wakeRoutine.changeTargetWakeTime(LocalTime.of(7, 30));
+        routines.saveAndFlush(wakeRoutine);
         myService.updateBedTime(user.getId(), LocalTime.of(23, 30));
         Notification first = notifications.findAll().getFirst();
         first.markSent(NOW);
@@ -204,6 +211,7 @@ class NotificationDomainIntegrationTest {
         User user = user("user@example.com", "User");
         DailyRoutine tomorrow = routines.saveAndFlush(DailyRoutine.create(user, TODAY.plusDays(1)));
         tomorrow.changeTargetBedTime(LocalTime.of(0, 30));
+        tomorrow.changeTargetWakeTime(LocalTime.of(8, 0));
         routines.saveAndFlush(tomorrow);
 
         Notification boundaryReminder = notificationService.scheduleBedtimeReminder(tomorrow);
@@ -212,10 +220,30 @@ class NotificationDomainIntegrationTest {
 
         DailyRoutine today = routines.saveAndFlush(DailyRoutine.create(user, TODAY));
         today.changeTargetBedTime(LocalTime.of(18, 0));
+        today.changeTargetWakeTime(LocalTime.of(23, 0));
         routines.saveAndFlush(today);
         Notification pastReminder = notificationService.scheduleBedtimeReminder(today);
         assertThat(pastReminder.getScheduledAt()).isAfterOrEqualTo(NOW);
         assertThat(notifications.findAll()).filteredOn(Notification::isPending).hasSize(2);
+    }
+
+    @Test
+    void bedtimeReminderRequiresWakeTimeAndUsesOnlyLastReminderForShortWindow() {
+        User user = user("short@example.com", "Short");
+        DailyRoutine withoutWake = routines.saveAndFlush(DailyRoutine.create(user, TODAY));
+        withoutWake.changeTargetBedTime(LocalTime.of(23, 0));
+        routines.saveAndFlush(withoutWake);
+
+        assertThat(notificationService.scheduleBedtimeReminder(withoutWake)).isNull();
+        assertThat(notifications.findAll()).isEmpty();
+
+        withoutWake.changeTargetBedTime(LocalTime.of(21, 45));
+        withoutWake.changeTargetWakeTime(LocalTime.of(22, 0));
+        routines.saveAndFlush(withoutWake);
+        Notification lastOnly = notificationService.scheduleBedtimeReminder(withoutWake);
+
+        assertThat(lastOnly.getScheduledAt()).isEqualTo(LocalDateTime.of(TODAY, LocalTime.of(20, 30)));
+        assertThat(notifications.findAll()).singleElement();
     }
 
     private RoommateGroup activeRoommateGroup(User first, User second) {

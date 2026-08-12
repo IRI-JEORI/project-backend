@@ -19,6 +19,8 @@ import com.nunnun.wake.entity.WakeGroupMember;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import java.util.List;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -210,6 +212,45 @@ class WakeGroupControllerTest {
                         .header("Authorization", bearerTokenFor(leavingUser)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_MEMBER_NOT_FOUND"));
+    }
+
+    @Test
+    void expiresAndReissuesInviteCodeAndInvalidatesItWhenLastMemberLeaves() throws Exception {
+        User creator = saveUser("creator@example.com");
+        User joiner = saveUser("joiner@example.com");
+        WakeGroup group = createGroup(creator, "OLDCODE00001");
+        group.reissueInviteCode("OLDCODE00001", LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        wakeGroupRepository.saveAndFlush(group);
+
+        join(joiner, "OLDCODE00001")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVITE_CODE_EXPIRED"));
+
+        mvcResult(post("/wake-groups/{id}/invite-code/reissue", group.getId()), creator)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inviteCode").isString())
+                .andExpect(jsonPath("$.data.expiresAt").isString());
+        WakeGroup reissued = wakeGroupRepository.findById(group.getId()).orElseThrow();
+        assertThat(reissued.getInviteCode()).isNotEqualTo("OLDCODE00001");
+        join(joiner, reissued.getInviteCode()).andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
+                        .header("Authorization", bearerTokenFor(joiner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
+                .andExpect(status().isOk());
+
+        WakeGroup empty = wakeGroupRepository.findById(group.getId()).orElseThrow();
+        assertThat(wakeGroupMemberRepository.findAllByWakeGroupId(group.getId())).isEmpty();
+        assertThat(empty.getInviteCode()).isNull();
+        assertThat(empty.getInviteCodeExpiresAt()).isNull();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions mvcResult(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, User user
+    ) throws Exception {
+        return mockMvc.perform(request.header("Authorization", bearerTokenFor(user)));
     }
 
     private void clearData() {

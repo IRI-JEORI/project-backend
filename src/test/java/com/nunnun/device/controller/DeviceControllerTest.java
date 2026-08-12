@@ -75,17 +75,17 @@ class DeviceControllerTest {
     }
 
     @Test
-    void updatesPlatformWhenExistingTokenIsRegisteredAgain() throws Exception {
+    void rejectsIosBecauseMvpSupportsAndroidOnly() throws Exception {
         User user = saveUser("nunnun@example.com");
         mockMvc.perform(register(user, "token-A", "ANDROID"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(register(user, "token-A", "IOS"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.platform").value("IOS"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
 
         assertThat(deviceRepository.findByFcmToken("token-A").orElseThrow().getPlatform())
-                .isEqualTo(DevicePlatform.IOS);
+                .isEqualTo(DevicePlatform.ANDROID);
     }
 
     @Test
@@ -95,13 +95,13 @@ class DeviceControllerTest {
         mockMvc.perform(register(firstUser, "token-A", "ANDROID"))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(register(secondUser, "token-A", "IOS"))
+        mockMvc.perform(register(secondUser, "token-A", "ANDROID"))
                 .andExpect(status().isOk());
 
         UserDevice userDevice = deviceRepository.findByFcmToken("token-A").orElseThrow();
         assertThat(deviceRepository.count()).isEqualTo(1);
         assertThat(userDevice.getUser().getId()).isEqualTo(secondUser.getId());
-        assertThat(userDevice.getPlatform()).isEqualTo(DevicePlatform.IOS);
+        assertThat(userDevice.getPlatform()).isEqualTo(DevicePlatform.ANDROID);
     }
 
     @Test

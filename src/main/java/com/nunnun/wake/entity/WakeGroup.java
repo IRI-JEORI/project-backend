@@ -31,6 +31,9 @@ public class WakeGroup {
     @Column(name = "invite_code", unique = true, length = 20)
     private String inviteCode;
 
+    @Column(name = "invite_code_expires_at")
+    private LocalDateTime inviteCodeExpiresAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id")
     private User creator;
@@ -42,14 +45,33 @@ public class WakeGroup {
     protected WakeGroup() {
     }
 
-    private WakeGroup(String name, String inviteCode, User creator) {
+    private WakeGroup(String name, String inviteCode, LocalDateTime inviteCodeExpiresAt, User creator) {
         this.name = Objects.requireNonNull(name);
         this.inviteCode = Objects.requireNonNull(inviteCode);
+        this.inviteCodeExpiresAt = Objects.requireNonNull(inviteCodeExpiresAt);
         this.creator = Objects.requireNonNull(creator);
     }
 
+    public static WakeGroup create(String name, String inviteCode, LocalDateTime inviteCodeExpiresAt, User creator) {
+        return new WakeGroup(name, inviteCode, inviteCodeExpiresAt, creator);
+    }
+
     public static WakeGroup create(String name, String inviteCode, User creator) {
-        return new WakeGroup(name, inviteCode, creator);
+        return create(name, inviteCode, LocalDateTime.now(java.time.ZoneOffset.UTC).plusHours(24), creator);
+    }
+
+    public boolean isInviteCodeExpiredAt(LocalDateTime now) {
+        return inviteCodeExpiresAt == null || !now.isBefore(inviteCodeExpiresAt);
+    }
+
+    public void reissueInviteCode(String inviteCode, LocalDateTime expiresAt) {
+        this.inviteCode = Objects.requireNonNull(inviteCode);
+        this.inviteCodeExpiresAt = Objects.requireNonNull(expiresAt);
+    }
+
+    public void invalidateInviteCode() {
+        this.inviteCode = null;
+        this.inviteCodeExpiresAt = null;
     }
 
     public Long getId() {
@@ -62,6 +84,10 @@ public class WakeGroup {
 
     public String getInviteCode() {
         return inviteCode;
+    }
+
+    public LocalDateTime getInviteCodeExpiresAt() {
+        return inviteCodeExpiresAt;
     }
 
     public User getCreator() {

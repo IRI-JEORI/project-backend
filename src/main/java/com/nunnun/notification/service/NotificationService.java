@@ -18,6 +18,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.time.Duration;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,7 +76,11 @@ public class NotificationService {
             DailyRoutine routine,
             LocalTime previousReturnTime
     ) {
-        if (Objects.equals(previousReturnTime, routine.getEstimatedReturnTime())) {
+        LocalTime changedTime = routine.getEstimatedReturnTime();
+        if (previousReturnTime == null
+                || Objects.equals(previousReturnTime, changedTime)
+                || Math.abs(Duration.between(previousReturnTime, changedTime).toMinutes()) < 1
+                || !changedTime.isAfter(LocalTime.now(clock))) {
             return Optional.empty();
         }
         return roommateOf(changedUser.getId()).map(roommate -> {
@@ -96,11 +101,30 @@ public class NotificationService {
     public Notification scheduleBedtimeReminder(DailyRoutine routine) {
         cancelPendingForReference(routine.getUser().getId(), NotificationType.BEDTIME_REMINDER, routine.getId());
         LocalDateTime now = LocalDateTime.now(clock);
-        LocalDateTime scheduledAt = routine.getRoutineDate()
-                .atTime(routine.getTargetBedTime())
-                .minusHours(1);
+        if (routine.getTargetWakeTime() == null) {
+            return null;
+        }
+        LocalDateTime bedAt = routine.getRoutineDate().atTime(routine.getTargetBedTime());
+        LocalDateTime wakeAt = routine.getRoutineDate().atTime(routine.getTargetWakeTime());
+        if (!wakeAt.isAfter(bedAt)) {
+            wakeAt = wakeAt.plusDays(1);
+        }
+        LocalDateTime lastReminderAt = wakeAt.minusMinutes(REMINDER_INTERVAL_MINUTES);
+        if (!now.isBefore(wakeAt)) {
+            return null;
+        }
+        LocalDateTime scheduledAt = bedAt.minusHours(1);
+        if (scheduledAt.isAfter(lastReminderAt)) {
+            scheduledAt = lastReminderAt;
+        }
         while (scheduledAt.isBefore(now)) {
             scheduledAt = scheduledAt.plusMinutes(REMINDER_INTERVAL_MINUTES);
+        }
+        if (scheduledAt.isAfter(lastReminderAt)) {
+            scheduledAt = lastReminderAt;
+        }
+        if (scheduledAt.isBefore(now)) {
+            return null;
         }
         NotificationMessage message = messages.bedtimeReminder(routine.getTargetBedTime());
         return notifications.save(Notification.createScheduled(
@@ -116,13 +140,17 @@ public class NotificationService {
     public void cancelPendingBedtimeReminders(Long userId) {
         notifications.findAllByUserIdAndTypeAndStatus(
                 userId, NotificationType.BEDTIME_REMINDER, NotificationStatus.PENDING
-        ).forEach(Notification::cancel);
+        ).stream().map(Notification::getId).forEach(this::cancelWithLock);
     }
 
     private void cancelPendingForReference(Long userId, NotificationType type, Long referenceId) {
         notifications.findAllByUserIdAndTypeAndReferenceIdAndStatus(
                 userId, type, referenceId, NotificationStatus.PENDING
-        ).forEach(Notification::cancel);
+        ).stream().map(Notification::getId).forEach(this::cancelWithLock);
+    }
+
+    private void cancelWithLock(Long notificationId) {
+        notifications.findByIdForUpdate(notificationId).ifPresent(Notification::cancel);
     }
 
     private Optional<User> roommateOf(Long userId) {

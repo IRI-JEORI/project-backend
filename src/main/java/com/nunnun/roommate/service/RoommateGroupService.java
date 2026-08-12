@@ -15,6 +15,7 @@ import com.nunnun.schedule.entity.FixedSchedule;
 import com.nunnun.schedule.repository.FixedScheduleRepository;
 import com.nunnun.sleep.entity.SleepSession;
 import com.nunnun.sleep.repository.SleepSessionRepository;
+import com.nunnun.sleep.service.SleepStateCalculator;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.service.InviteCodeGenerator;
@@ -22,6 +23,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -40,11 +42,13 @@ public class RoommateGroupService {
     private final FixedScheduleRepository schedules;
     private final SleepSessionRepository sleepSessions;
     private final Clock clock;
+    private final SleepStateCalculator sleepStateCalculator;
 
     public RoommateGroupService(RoommateGroupRepository groups, RoommateGroupMemberRepository members,
                                 UserRepository users, InviteCodeGenerator codes,
                                 DailyRoutineRepository routines, FixedScheduleRepository schedules,
-                                SleepSessionRepository sleepSessions, Clock clock) {
+                                SleepSessionRepository sleepSessions, Clock clock,
+                                SleepStateCalculator sleepStateCalculator) {
         this.groups = groups;
         this.members = members;
         this.users = users;
@@ -53,23 +57,27 @@ public class RoommateGroupService {
         this.schedules = schedules;
         this.sleepSessions = sleepSessions;
         this.clock = clock;
+        this.sleepStateCalculator = sleepStateCalculator;
     }
 
     @Transactional
     public RoommateGroup create(Long userId, String name) {
         User user = user(userId);
         ensureFree(userId);
-        RoommateGroup group = groups.save(RoommateGroup.create(name, code(), user));
+        RoommateGroup group = groups.save(RoommateGroup.create(name, code(), nowUtc().plusHours(24), user));
         members.save(RoommateGroupMember.join(group, user, (short) 1));
         return group;
     }
 
     @Transactional
     public RoommateGroup join(Long userId, String inviteCode) {
-        User user = user(userId);
-        ensureFree(userId);
         RoommateGroup group = groups.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
+        if (group.isInviteCodeExpiredAt(nowUtc())) {
+            throw new BusinessException(ErrorCode.INVITE_CODE_EXPIRED);
+        }
+        User user = user(userId);
+        ensureFree(userId);
         if (group.getStatus() != RoommateGroupStatus.WAITING || members.countByRoommateGroupId(group.getId()) != 1) {
             throw new BusinessException(ErrorCode.ROOMMATE_GROUP_FULL);
         }
@@ -101,33 +109,60 @@ public class RoommateGroupService {
                         schedule -> schedule.getUser().getId(),
                         Collectors.mapping(FixedScheduleResponse::from, Collectors.toList())
                 ));
+        List<DailyRoutine> sleepRoutines = routines.findAllByUserIdInAndRoutineDateBetween(
+                memberUserIds, today.minusDays(1), today
+        );
         Map<Long, RoommateGroupDetailResponse.SleepResponse> sleepsByUserId = latestSleeps(
-                sleepSessions.findAllByUserIdInAndSleepDateOrderByUserIdAscStartedAtDesc(memberUserIds, today), now
+                sleepSessions.findAllByUserIdInAndStartedAtGreaterThanEqualOrderByUserIdAscStartedAtDesc(
+                        memberUserIds, now.minusDays(1)
+                ), sleepRoutines, now
         );
         return RoommateGroupDetailResponse.from(group, groupMembers, routinesByUserId, schedulesByUserId, sleepsByUserId);
     }
 
     @Transactional
     public void leave(Long userId, Long groupId) {
+        user(userId);
+        RoommateGroup lockedGroup = groups.findByIdForUpdate(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
         RoommateGroupMember member = members.findByRoommateGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_MEMBER_NOT_FOUND));
-        RoommateGroup group = member.getRoommateGroup();
+        RoommateGroup group = lockedGroup;
         members.delete(member);
+        members.flush();
         if (members.countByRoommateGroupId(groupId) == 1) {
             group.waitForRoommate();
         } else if (members.countByRoommateGroupId(groupId) == 0) {
-            groups.delete(group);
+            group.waitForRoommate();
+            group.invalidateInviteCode();
         }
     }
 
     @Transactional(readOnly = true)
-    public String invite(Long userId, Long groupId) {
+    public com.nunnun.roommate.dto.RoommateInviteCodeResponse invite(Long userId, Long groupId) {
         if (!members.existsByRoommateGroupIdAndUserId(groupId, userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        return groups.findById(groupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND))
-                .getInviteCode();
+        RoommateGroup group = groups.findById(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
+        return new com.nunnun.roommate.dto.RoommateInviteCodeResponse(
+                group.getInviteCode(), group.getInviteCodeExpiresAt() == null
+                        ? null : group.getInviteCodeExpiresAt().toInstant(ZoneOffset.UTC)
+        );
+    }
+
+    @Transactional
+    public com.nunnun.roommate.dto.RoommateInviteCodeResponse reissueInviteCode(Long userId, Long groupId) {
+        user(userId);
+        RoommateGroup group = groups.findByIdForUpdate(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
+        if (!members.existsByRoommateGroupIdAndUserId(groupId, userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        group.reissueInviteCode(code(), nowUtc().plusHours(24));
+        return new com.nunnun.roommate.dto.RoommateInviteCodeResponse(
+                group.getInviteCode(), group.getInviteCodeExpiresAt().toInstant(ZoneOffset.UTC)
+        );
     }
 
     private User user(Long id) {
@@ -152,14 +187,27 @@ public class RoommateGroupService {
     }
 
     private Map<Long, RoommateGroupDetailResponse.SleepResponse> latestSleeps(
-            Collection<SleepSession> sessions, LocalDateTime now
+            Collection<SleepSession> sessions, Collection<DailyRoutine> sleepRoutines, LocalDateTime now
     ) {
-        return sessions.stream().collect(Collectors.toMap(
-                session -> session.getUser().getId(),
-                session -> RoommateGroupDetailResponse.SleepResponse.from(
-                        session, Duration.between(session.getStartedAt(), now).toMinutes()
-                ),
-                (first, ignored) -> first
+        Map<String, DailyRoutine> byUserAndDate = sleepRoutines.stream().collect(Collectors.toMap(
+                routine -> routine.getUser().getId() + ":" + routine.getRoutineDate(), Function.identity()
         ));
+        return sessions.stream()
+                .filter(session -> sleepStateCalculator.isSleeping(
+                        session,
+                        byUserAndDate.get(session.getUser().getId() + ":" + session.getSleepDate()),
+                        now
+                ))
+                .collect(Collectors.toMap(
+                        session -> session.getUser().getId(),
+                        session -> RoommateGroupDetailResponse.SleepResponse.from(
+                                session, Duration.between(session.getStartedAt(), now).toMinutes()
+                        ),
+                        (first, ignored) -> first
+                ));
+    }
+
+    private LocalDateTime nowUtc() {
+        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 }

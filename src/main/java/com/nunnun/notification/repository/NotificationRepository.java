@@ -40,4 +40,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select notification from Notification notification join fetch notification.user where notification.id = :id")
     Optional<Notification> findByIdForUpdate(@Param("id") Long id);
+
+    List<Notification> findAllByUserIdAndStatus(Long userId, NotificationStatus status);
 }

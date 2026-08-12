@@ -25,4 +25,6 @@ public interface RoommateGroupMemberRepository extends JpaRepository<RoommateGro
     List<com.nunnun.roommate.entity.RoommateGroup> findAllRoommateGroupsByUserId(@Param("userId") Long userId);
 
     long countByRoommateGroupId(Long groupId);
+
+    List<RoommateGroupMember> findAllByUserId(Long userId);
 }

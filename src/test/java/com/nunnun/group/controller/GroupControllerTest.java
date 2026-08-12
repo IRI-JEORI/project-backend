@@ -159,8 +159,8 @@ class GroupControllerTest {
         users.saveAndFlush(deleted);
 
         mvc.perform(get("/groups").header("Authorization", token(deleted)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_JWT"));
 
         GroupSummaryResponse wake = new GroupSummaryResponse(1L, GroupType.WAKE, "Wake", null);
         GroupSummaryResponse roommate = new GroupSummaryResponse(

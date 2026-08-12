@@ -18,4 +18,6 @@ public interface FixedScheduleRepository extends JpaRepository<FixedSchedule, Lo
     );
 
     Optional<FixedSchedule> findByIdAndUserId(Long id, Long userId);
+
+    void deleteAllByUserId(Long userId);
 }

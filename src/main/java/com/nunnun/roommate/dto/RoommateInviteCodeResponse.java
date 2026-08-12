@@ -1,2 +1,5 @@
 package com.nunnun.roommate.dto;
-public record RoommateInviteCodeResponse(String inviteCode) {}
+
+import java.time.Instant;
+
+public record RoommateInviteCodeResponse(String inviteCode, Instant expiresAt) {}

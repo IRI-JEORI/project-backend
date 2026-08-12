@@ -187,6 +187,31 @@ class RoommateGroupControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void expiresAndReissuesInviteCodeForMembersOnly() throws Exception {
+        User member = user("Member", "member@x.com");
+        User outsider = user("Outsider", "outsider@x.com");
+        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Room", "OLDROOMCODE", member));
+        members.saveAndFlush(RoommateGroupMember.join(group, member, (short) 1));
+        group.reissueInviteCode("OLDROOMCODE", LocalDateTime.of(2026, 8, 11, 19, 29));
+        groups.saveAndFlush(group);
+
+        mvc.perform(post("/roommate-groups/join").header("Authorization", token(outsider))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inviteCode\":\"OLDROOMCODE\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVITE_CODE_EXPIRED"));
+        mvc.perform(post("/roommate-groups/{id}/invite-code/reissue", group.getId())
+                        .header("Authorization", token(outsider)))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/roommate-groups/{id}/invite-code/reissue", group.getId())
+                        .header("Authorization", token(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inviteCode").isString())
+                .andExpect(jsonPath("$.data.expiresAt").isString());
+
+        assertThat(groups.findById(group.getId()).orElseThrow().getInviteCode()).isNotEqualTo("OLDROOMCODE");
+    }
+
     private RoommateGroup activeGroup(User first, User second) {
         RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Room", "CODE", first));
         members.saveAndFlush(RoommateGroupMember.join(group, first, (short) 1));

@@ -17,4 +17,6 @@ public interface WakeGroupMemberRepository extends JpaRepository<WakeGroupMember
 
     @Query("select member.wakeGroup from WakeGroupMember member where member.user.id = :userId")
     List<com.nunnun.wake.entity.WakeGroup> findAllWakeGroupsByUserId(@Param("userId") Long userId);
+
+    List<WakeGroupMember> findAllByUserId(Long userId);
 }

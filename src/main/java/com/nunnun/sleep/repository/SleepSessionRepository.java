@@ -13,4 +13,10 @@ public interface SleepSessionRepository extends JpaRepository<SleepSession, Long
     );
 
     boolean existsByUserIdAndStartedAtGreaterThanEqual(Long userId, LocalDateTime startedAt);
+
+    List<SleepSession> findAllByUserIdInAndStartedAtGreaterThanEqualOrderByUserIdAscStartedAtDesc(
+            Collection<Long> userIds, LocalDateTime startedAt
+    );
+
+    void deleteAllByUserId(Long userId);
 }

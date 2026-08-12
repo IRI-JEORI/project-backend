@@ -13,6 +13,7 @@ import com.nunnun.roommate.repository.RoommateGroupRepository;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RoommateComplaintService {
@@ -37,7 +38,10 @@ public class RoommateComplaintService {
         this.persistenceService = persistenceService;
     }
 
+    @Transactional
     public Long create(Long authorId, Long groupId, String content) {
+        groups.findByIdForUpdate(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
         Target target = findAvailableTarget(authorId, groupId);
         List<String> complaintContents = complaintContents(groupId, target.userId());
         complaintContents.add(content);
@@ -45,9 +49,12 @@ public class RoommateComplaintService {
         return persistenceService.create(groupId, authorId, target.userId(), content, manualContent);
     }
 
+    @Transactional
     public Long update(Long authorId, Long complaintId, String content) {
         RoommateComplaint complaint = complaints.findByIdWithAssociations(complaintId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_COMPLAINT_NOT_FOUND));
+        groups.findByIdForUpdate(complaint.getRoommateGroup().getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
         if (!complaint.getAuthor().getId().equals(authorId)
                 || !members.existsByRoommateGroupIdAndUserId(complaint.getRoommateGroup().getId(), authorId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);

@@ -19,6 +19,9 @@ import com.nunnun.notification.push.PushSender;
 import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.sleep.entity.SleepSession;
 import com.nunnun.sleep.repository.SleepSessionRepository;
+import com.nunnun.routine.entity.DailyRoutine;
+import com.nunnun.routine.repository.DailyRoutineRepository;
+import java.time.LocalTime;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import java.time.Clock;
@@ -53,6 +56,7 @@ class NotificationDispatcherTest {
     @Autowired private NotificationRepository notifications;
     @Autowired private DeviceRepository devices;
     @Autowired private SleepSessionRepository sleepSessions;
+    @Autowired private DailyRoutineRepository routines;
     @Autowired private UserRepository users;
     @Autowired private PasswordEncoder encoder;
     @MockitoBean private PushSender pushSender;
@@ -62,6 +66,7 @@ class NotificationDispatcherTest {
     void clean() {
         notifications.deleteAllInBatch();
         sleepSessions.deleteAllInBatch();
+        routines.deleteAllInBatch();
         devices.deleteAllInBatch();
         users.deleteAllInBatch();
     }
@@ -71,7 +76,6 @@ class NotificationDispatcherTest {
         User user = user("user@example.com");
         devices.saveAndFlush(UserDevice.create(user, "android-1", DevicePlatform.ANDROID));
         devices.saveAndFlush(UserDevice.create(user, "android-2", DevicePlatform.ANDROID));
-        devices.saveAndFlush(UserDevice.create(user, "ios", DevicePlatform.IOS));
         Notification due = notification(user, NotificationType.WAKE_REQUEST, NOW.minusMinutes(1), 10L);
         Notification future = notification(user, NotificationType.WAKE_REQUEST, NOW.plusMinutes(1), 11L);
         when(pushSender.send(any(PushMessage.class), anyList())).thenReturn(new PushSendResult(1, 1));
@@ -120,7 +124,11 @@ class NotificationDispatcherTest {
     void createsOneNextBedtimeReminderAtNinetyMinutesAfterSuccessfulSend() {
         User user = user("user@example.com");
         devices.saveAndFlush(UserDevice.create(user, "token", DevicePlatform.ANDROID));
-        Notification bedtime = notification(user, NotificationType.BEDTIME_REMINDER, NOW.minusMinutes(1), 30L);
+        DailyRoutine routine = routines.saveAndFlush(DailyRoutine.create(user, NOW.toLocalDate()));
+        routine.changeTargetBedTime(LocalTime.of(10, 0));
+        routine.changeTargetWakeTime(LocalTime.of(16, 0));
+        routines.saveAndFlush(routine);
+        Notification bedtime = notification(user, NotificationType.BEDTIME_REMINDER, NOW.minusMinutes(1), routine.getId());
         when(pushSender.send(any(PushMessage.class), anyList())).thenReturn(new PushSendResult(1, 0));
 
         dispatcher.dispatchDueNotifications();
@@ -139,14 +147,38 @@ class NotificationDispatcherTest {
     void doesNotCreateNextReminderWhenUserHasSleptSinceReminder() {
         User user = user("user@example.com");
         devices.saveAndFlush(UserDevice.create(user, "token", DevicePlatform.ANDROID));
-        Notification bedtime = notification(user, NotificationType.BEDTIME_REMINDER, NOW.minusMinutes(10), 40L);
+        DailyRoutine routine = routines.saveAndFlush(DailyRoutine.create(user, NOW.toLocalDate()));
+        routine.changeTargetBedTime(LocalTime.of(10, 0));
+        routine.changeTargetWakeTime(LocalTime.of(16, 0));
+        routines.saveAndFlush(routine);
+        Notification bedtime = notification(user, NotificationType.BEDTIME_REMINDER, NOW.minusMinutes(10), routine.getId());
         sleepSessions.saveAndFlush(SleepSession.create(user, LocalDate.of(2026, 8, 12), NOW.minusMinutes(5)));
         when(pushSender.send(any(PushMessage.class), anyList())).thenReturn(new PushSendResult(1, 0));
 
         dispatcher.dispatchDueNotifications();
 
-        assertThat(reload(bedtime).getStatus()).isEqualTo(NotificationStatus.SENT);
+        assertThat(reload(bedtime).getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+        verify(pushSender, never()).send(any(), anyList());
         assertThat(notifications.findAll()).hasSize(1);
+    }
+
+    @Test
+    void clampsNextCadenceToExactLastReminderAndStopsThere() {
+        User user = user("last@example.com");
+        devices.saveAndFlush(UserDevice.create(user, "token", DevicePlatform.ANDROID));
+        DailyRoutine routine = routines.saveAndFlush(DailyRoutine.create(user, NOW.toLocalDate()));
+        routine.changeTargetBedTime(LocalTime.of(10, 0));
+        routine.changeTargetWakeTime(LocalTime.of(14, 30));
+        routines.saveAndFlush(routine);
+        Notification current = notification(user, NotificationType.BEDTIME_REMINDER,
+                LocalDateTime.of(2026, 8, 12, 11, 45), routine.getId());
+        when(pushSender.send(any(PushMessage.class), anyList())).thenReturn(new PushSendResult(1, 0));
+
+        dispatcher.dispatchDueNotifications();
+
+        Notification last = notifications.findAll().stream().filter(Notification::isPending).findFirst().orElseThrow();
+        assertThat(last.getScheduledAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 13, 0));
+        assertThat(current.getScheduledAt().plusMinutes(90)).isAfter(last.getScheduledAt());
     }
 
     private Notification notification(User user, NotificationType type, LocalDateTime scheduledAt, Long referenceId) {
