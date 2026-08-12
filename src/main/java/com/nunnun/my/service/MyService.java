@@ -3,6 +3,7 @@ package com.nunnun.my.service;
 import com.nunnun.my.dto.MyTodayResponse;
 import com.nunnun.my.dto.UpdateBedTimeResponse;
 import com.nunnun.my.dto.UpdateReturnTimeResponse;
+import com.nunnun.my.dto.UpdateWakeTimeResponse;
 import com.nunnun.routine.entity.DailyRoutine;
 import com.nunnun.routine.service.DailyRoutineService;
 import com.nunnun.schedule.dto.FixedScheduleResponse;
@@ -58,5 +59,10 @@ public class MyService {
     public UpdateReturnTimeResponse updateReturnTime(Long userId, LocalTime estimatedReturnTime) {
         DailyRoutine routine = dailyRoutineService.updateEstimatedReturnTime(userId, estimatedReturnTime);
         return new UpdateReturnTimeResponse(routine.getEstimatedReturnTime());
+    }
+
+    public UpdateWakeTimeResponse updateWakeTime(Long userId, LocalTime targetWakeTime) {
+        DailyRoutine routine = dailyRoutineService.updateTargetWakeTime(userId, targetWakeTime);
+        return new UpdateWakeTimeResponse(routine.getTargetWakeTime());
     }
 }

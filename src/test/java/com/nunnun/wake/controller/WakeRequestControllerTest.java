@@ -31,6 +31,7 @@ import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import com.nunnun.wake.service.WakeProofCleanupService;
+import com.nunnun.wake.service.WakeRequestExpirationService;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
 import java.time.Clock;
@@ -69,6 +70,7 @@ class WakeRequestControllerTest {
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
     @Autowired private WakeProofCleanupService wakeProofCleanupService;
+    @Autowired private WakeRequestExpirationService wakeRequestExpirationService;
     @Autowired private NotificationRepository notificationRepository;
     @Autowired private SleepFeedbackRepository sleepFeedbackRepository;
     @Autowired private SleepSessionRepository sleepSessionRepository;
@@ -219,16 +221,68 @@ class WakeRequestControllerTest {
     }
 
     @Test
-    void cleansExpiredProofOnlyAfterStorageDeletionAndExpiresRequest() {
+    void cleansExpiredProofOnlyAfterStorageDeletionAndKeepsRequestVerified() {
         User sender = saveUser("sender@example.com");
         User receiver = saveUser("receiver@example.com");
         WakeRequest request = createRequest(sender, receiver);
         WakeProof expired = wakeProofRepository.saveAndFlush(WakeProof.verify(request, "wake-proofs/expired.jpg", NOW.minusHours(8)));
+        request.verify();
+        wakeRequestRepository.saveAndFlush(request);
 
         wakeProofCleanupService.cleanupExpiredProofs();
         verify(wakeProofStorage).delete("wake-proofs/expired.jpg");
         assertThat(wakeProofRepository.findById(expired.getId())).isEmpty();
-        assertThat(wakeRequestRepository.findById(request.getId()).orElseThrow().getStatus()).isEqualTo(WakeRequestStatus.EXPIRED);
+        assertThat(wakeRequestRepository.findById(request.getId()).orElseThrow().getStatus()).isEqualTo(WakeRequestStatus.VERIFIED);
+    }
+
+    @Test
+    void expiresOnlyUnverifiedRequestsAtExactTenMinuteBoundary() {
+        User sender = saveUser("expire-sender@example.com");
+        User receiver = saveUser("expire-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest beforeBoundary = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(10).plusSeconds(1)));
+        WakeRequest boundary = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(10)));
+        WakeRequest verified = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(11)));
+        verified.verify();
+        wakeRequestRepository.saveAndFlush(verified);
+
+        wakeRequestExpirationService.expireUnverifiedRequests();
+
+        assertThat(wakeRequestRepository.findById(beforeBoundary.getId()).orElseThrow().getStatus())
+                .isEqualTo(WakeRequestStatus.SENT);
+        assertThat(wakeRequestRepository.findById(boundary.getId()).orElseThrow().getStatus())
+                .isEqualTo(WakeRequestStatus.EXPIRED);
+        assertThat(wakeRequestRepository.findById(verified.getId()).orElseThrow().getStatus())
+                .isEqualTo(WakeRequestStatus.VERIFIED);
+    }
+
+    @Test
+    void enforcesReceiverWideFiveMinuteRequestCooldownAtExactBoundary() throws Exception {
+        User first = saveUser("five-first@example.com");
+        User second = saveUser("five-second@example.com");
+        User receiver = saveUser("five-receiver@example.com");
+        WakeGroup group = wakeGroupRepository.saveAndFlush(WakeGroup.create("Wake", "FIVECODE", first));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, first, (short) 1));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, second, (short) 2));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, receiver, (short) 3));
+        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, first, receiver, NOW.minusMinutes(4).minusSeconds(59)));
+
+        wake(second, group.getId(), receiver.getId()).andExpect(status().isConflict());
+
+        clearData();
+        first = saveUser("boundary-first@example.com");
+        second = saveUser("boundary-second@example.com");
+        receiver = saveUser("boundary-receiver@example.com");
+        group = wakeGroupRepository.saveAndFlush(WakeGroup.create("Wake", "BOUNDARYCODE", first));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, first, (short) 1));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, second, (short) 2));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, receiver, (short) 3));
+        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, first, receiver, NOW.minusMinutes(5)));
+
+        wake(second, group.getId(), receiver.getId()).andExpect(status().isCreated());
     }
 
     private void clearData() {
@@ -265,6 +319,14 @@ class WakeRequestControllerTest {
     }
 
     private MockMultipartFile image(String name, String contentType, byte[] bytes) {
+        if (bytes.length == 1 && bytes[0] == 1) {
+            bytes = switch (contentType) {
+                case "image/jpeg" -> new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
+                case "image/png" -> new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+                case "image/webp" -> new byte[]{0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50};
+                default -> bytes;
+            };
+        }
         return new MockMultipartFile("image", name, contentType, bytes);
     }
 

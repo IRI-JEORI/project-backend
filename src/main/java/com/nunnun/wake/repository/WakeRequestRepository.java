@@ -1,6 +1,8 @@
 package com.nunnun.wake.repository;
 
 import com.nunnun.wake.entity.WakeRequest;
+import com.nunnun.wake.entity.WakeRequestStatus;
+import java.util.List;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
@@ -26,5 +28,14 @@ public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> 
     boolean existsRecentVerifiedProofByReceiverId(
             @Param("receiverId") Long receiverId,
             @Param("cooldownStartedAt") LocalDateTime cooldownStartedAt
+    );
+
+    boolean existsByWakeGroupIdAndReceiverIdAndRequestedAtGreaterThan(
+            Long wakeGroupId, Long receiverId, LocalDateTime cooldownStartedAt
+    );
+
+    @Query("select request.id from WakeRequest request where request.status = :status and request.requestedAt <= :cutoff")
+    List<Long> findIdsByStatusAndRequestedAtLessThanEqual(
+            @Param("status") WakeRequestStatus status, @Param("cutoff") LocalDateTime cutoff
     );
 }

@@ -36,7 +36,7 @@ public class WakeProofCleanupService {
         for (WakeProof proof : expiredProofs) {
             try {
                 wakeProofStorage.delete(proof.getImageObjectKey());
-                cleanupPersistenceService.deleteExpiredProofAndExpireRequest(proof.getId());
+                cleanupPersistenceService.deleteExpiredProof(proof.getId());
             } catch (WakeProofStorageException ignored) {
                 // Keep the row so a later scheduled run can retry deleting the external object.
             }

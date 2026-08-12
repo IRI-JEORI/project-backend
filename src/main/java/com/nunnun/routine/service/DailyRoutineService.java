@@ -58,6 +58,17 @@ public class DailyRoutineService {
         return routine;
     }
 
+    @Transactional
+    public DailyRoutine updateTargetWakeTime(Long userId, LocalTime targetWakeTime) {
+        DailyRoutine routine = findOrCreateTodayRoutine(userId);
+        routine.changeTargetWakeTime(targetWakeTime);
+        notificationService.cancelPendingBedtimeReminders(userId);
+        if (routine.getTargetBedTime() != null) {
+            notificationService.scheduleBedtimeReminder(routine);
+        }
+        return routine;
+    }
+
     private DailyRoutine findOrCreateTodayRoutine(Long userId) {
         LocalDate today = LocalDate.now(clock);
         User user = findActiveUser(userId);

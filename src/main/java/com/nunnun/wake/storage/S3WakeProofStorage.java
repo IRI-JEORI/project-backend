@@ -6,6 +6,10 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import java.util.ArrayList;
+import java.util.List;
 
 public class S3WakeProofStorage implements WakeProofStorage {
 
@@ -39,6 +43,23 @@ public class S3WakeProofStorage implements WakeProofStorage {
             s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(objectKey).build());
         } catch (RuntimeException exception) {
             throw new WakeProofStorageException("Failed to delete wake proof image.", exception);
+        }
+    }
+
+    @Override
+    public List<StoredObject> list(String prefix) {
+        try {
+            List<StoredObject> objects = new ArrayList<>();
+            String continuationToken = null;
+            do {
+                ListObjectsV2Response response = s3Client.listObjectsV2(ListObjectsV2Request.builder()
+                        .bucket(bucket).prefix(prefix).continuationToken(continuationToken).build());
+                response.contents().forEach(object -> objects.add(new StoredObject(object.key(), object.lastModified())));
+                continuationToken = response.nextContinuationToken();
+            } while (continuationToken != null);
+            return List.copyOf(objects);
+        } catch (RuntimeException exception) {
+            throw new WakeProofStorageException("Failed to list wake proof images.", exception);
         }
     }
 }

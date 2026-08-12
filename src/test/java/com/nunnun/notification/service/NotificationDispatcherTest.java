@@ -121,6 +121,51 @@ class NotificationDispatcherTest {
     }
 
     @Test
+    void cancelsWhenFirebaseIsIntentionallyDisabled() {
+        User user = user("disabled@example.com");
+        devices.saveAndFlush(UserDevice.create(user, "disabled-token", DevicePlatform.ANDROID));
+        Notification due = notification(user, NotificationType.WAKE_REQUEST, NOW, 30L);
+        when(pushSender.send(any(PushMessage.class), anyList())).thenReturn(PushSendResult.disabled(1));
+
+        dispatcher.dispatchDueNotifications();
+
+        assertThat(reload(due).getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+        assertThat(reload(due).getSentAt()).isNull();
+    }
+
+    @Test
+    void deletesOnlyUnregisteredTokensAndUsesAnySuccessAsSent() {
+        User user = user("unregistered@example.com");
+        devices.saveAndFlush(UserDevice.create(user, "good-token", DevicePlatform.ANDROID));
+        devices.saveAndFlush(UserDevice.create(user, "gone-token", DevicePlatform.ANDROID));
+        devices.saveAndFlush(UserDevice.create(user, "temporary-token", DevicePlatform.ANDROID));
+        Notification due = notification(user, NotificationType.WAKE_REQUEST, NOW, 31L);
+        when(pushSender.send(any(PushMessage.class), anyList()))
+                .thenReturn(new PushSendResult(1, 2, false, List.of("gone-token")));
+
+        dispatcher.dispatchDueNotifications();
+
+        assertThat(reload(due).getStatus()).isEqualTo(NotificationStatus.SENT);
+        assertThat(devices.findByFcmToken("gone-token")).isEmpty();
+        assertThat(devices.findByFcmToken("good-token")).isPresent();
+        assertThat(devices.findByFcmToken("temporary-token")).isPresent();
+    }
+
+    @Test
+    void deletesAllUnregisteredTokensButMarksAllFailedNotificationAsFailed() {
+        User user = user("all-gone@example.com");
+        devices.saveAndFlush(UserDevice.create(user, "gone-only", DevicePlatform.ANDROID));
+        Notification due = notification(user, NotificationType.WAKE_REQUEST, NOW, 32L);
+        when(pushSender.send(any(PushMessage.class), anyList()))
+                .thenReturn(new PushSendResult(0, 1, false, List.of("gone-only")));
+
+        dispatcher.dispatchDueNotifications();
+
+        assertThat(reload(due).getStatus()).isEqualTo(NotificationStatus.FAILED);
+        assertThat(devices.findByFcmToken("gone-only")).isEmpty();
+    }
+
+    @Test
     void createsOneNextBedtimeReminderAtNinetyMinutesAfterSuccessfulSend() {
         User user = user("user@example.com");
         devices.saveAndFlush(UserDevice.create(user, "token", DevicePlatform.ANDROID));

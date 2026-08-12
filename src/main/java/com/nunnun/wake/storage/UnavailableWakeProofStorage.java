@@ -11,4 +11,9 @@ public class UnavailableWakeProofStorage implements WakeProofStorage {
     public void delete(String objectKey) {
         throw new WakeProofStorageException("Wake proof storage is not configured.");
     }
+
+    @Override
+    public java.util.List<StoredObject> list(String prefix) {
+        return java.util.List.of();
+    }
 }

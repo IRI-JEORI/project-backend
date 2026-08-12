@@ -6,6 +6,6 @@ public class UnavailablePushSender implements PushSender {
 
     @Override
     public PushSendResult send(PushMessage message, List<String> fcmTokens) {
-        return PushSendResult.allFailed(fcmTokens.size());
+        return PushSendResult.disabled(fcmTokens.size());
     }
 }

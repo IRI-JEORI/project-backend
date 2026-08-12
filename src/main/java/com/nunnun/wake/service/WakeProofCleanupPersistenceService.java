@@ -19,12 +19,11 @@ public class WakeProofCleanupPersistenceService {
     }
 
     @Transactional
-    public void deleteExpiredProofAndExpireRequest(Long proofId) {
+    public void deleteExpiredProof(Long proofId) {
         WakeProof proof = wakeProofRepository.findById(proofId).orElse(null);
         if (proof == null || proof.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
             return;
         }
-        proof.getWakeRequest().expire();
         wakeProofRepository.delete(proof);
     }
 }

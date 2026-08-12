@@ -13,4 +13,6 @@ public interface WakeProofRepository extends JpaRepository<WakeProof, Long> {
     Optional<WakeProof> findByWakeRequestId(Long wakeRequestId);
 
     List<WakeProof> findAllByExpiresAtLessThanEqual(LocalDateTime now);
+
+    boolean existsByImageObjectKey(String imageObjectKey);
 }

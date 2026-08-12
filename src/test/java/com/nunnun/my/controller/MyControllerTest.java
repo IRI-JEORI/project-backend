@@ -227,6 +227,69 @@ class MyControllerTest {
                         .content("{\"estimatedReturnTime\":\"20:00\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+        mockMvc.perform(patch("/me/today/wake-time")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetWakeTime\":\"07:30\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void createsAndUpdatesWakeTimeForAuthenticatedUsersRoutineOnly() throws Exception {
+        User user = saveUser("wake@example.com");
+        User other = saveUser("other-wake@example.com");
+        DailyRoutine otherRoutine = dailyRoutineRepository.saveAndFlush(DailyRoutine.create(other, TODAY));
+        otherRoutine.changeTargetWakeTime(LocalTime.of(8, 0));
+
+        mockMvc.perform(patch("/me/today/wake-time").header("Authorization", bearerTokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetWakeTime\":\"07:30\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.targetWakeTime").value("07:30:00"));
+
+        DailyRoutine routine = dailyRoutineRepository.findByUserIdAndRoutineDate(user.getId(), TODAY).orElseThrow();
+        assertThat(routine.getTargetWakeTime()).isEqualTo(LocalTime.of(7, 30));
+        assertThat(routine.getTargetBedTime()).isNull();
+        assertThat(notificationRepository.findAll()).isEmpty();
+        assertThat(otherRoutine.getTargetWakeTime()).isEqualTo(LocalTime.of(8, 0));
+
+        mockMvc.perform(patch("/me/today/wake-time").header("Authorization", bearerTokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetWakeTime\":\"06:30\"}"))
+                .andExpect(status().isOk());
+        assertThat(routine.getTargetWakeTime()).isEqualTo(LocalTime.of(6, 30));
+    }
+
+    @Test
+    void wakeTimeChangeCancelsPendingAndRecalculatesWithoutDuplicates() throws Exception {
+        User user = saveUser("reminder@example.com");
+        DailyRoutine routine = dailyRoutineRepository.saveAndFlush(DailyRoutine.create(user, TODAY));
+        routine.changeTargetBedTime(LocalTime.of(23, 30));
+        routine.changeTargetWakeTime(LocalTime.of(8, 0));
+        dailyRoutineRepository.saveAndFlush(routine);
+        com.nunnun.notification.entity.Notification old = notificationRepository.saveAndFlush(
+                com.nunnun.notification.entity.Notification.createScheduled(user,
+                        com.nunnun.notification.entity.NotificationType.BEDTIME_REMINDER,
+                        "title", "body", routine.getId(), TODAY.atTime(22, 30)));
+
+        for (int index = 0; index < 2; index++) {
+            mockMvc.perform(patch("/me/today/wake-time").header("Authorization", bearerTokenFor(user))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"targetWakeTime\":\"07:30\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        assertThat(notificationRepository.findById(old.getId()).orElseThrow().getStatus())
+                .isEqualTo(com.nunnun.notification.entity.NotificationStatus.CANCELLED);
+        assertThat(notificationRepository.findAll()).filteredOn(com.nunnun.notification.entity.Notification::isPending)
+                .singleElement().extracting(com.nunnun.notification.entity.Notification::getScheduledAt)
+                .isEqualTo(TODAY.atTime(22, 30));
+    }
+
+    @Test
+    void rejectsMissingAndInvalidWakeTime() throws Exception {
+        User user = saveUser("invalid-wake@example.com");
+        mockMvc.perform(patch("/me/today/wake-time").header("Authorization", bearerTokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/me/today/wake-time").header("Authorization", bearerTokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetWakeTime\":\"25:00\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     private User saveUser(String email) {

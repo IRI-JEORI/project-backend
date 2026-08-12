@@ -54,11 +54,17 @@ public class WakeRequestService {
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, senderId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_SENDER_NOT_MEMBER);
         }
-        User receiver = findActiveUser(receiverId);
+        User receiver = userRepository.findActiveByIdForUpdate(receiverId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, receiverId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_RECEIVER_NOT_MEMBER);
         }
         LocalDateTime now = LocalDateTime.now(clock);
+        if (wakeRequestRepository.existsByWakeGroupIdAndReceiverIdAndRequestedAtGreaterThan(
+                groupId, receiverId, now.minusMinutes(5)
+        )) {
+            throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
+        }
         if (wakeRequestRepository.existsRecentVerifiedProofByReceiverId(receiverId, now.minusMinutes(30))) {
             throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
         }

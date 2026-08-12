@@ -7,6 +7,8 @@ import com.nunnun.my.dto.UpdateBedTimeRequest;
 import com.nunnun.my.dto.UpdateBedTimeResponse;
 import com.nunnun.my.dto.UpdateReturnTimeRequest;
 import com.nunnun.my.dto.UpdateReturnTimeResponse;
+import com.nunnun.my.dto.UpdateWakeTimeRequest;
+import com.nunnun.my.dto.UpdateWakeTimeResponse;
 import com.nunnun.my.service.MyService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -46,5 +48,15 @@ public class MyController {
             @Valid @RequestBody UpdateReturnTimeRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(myService.updateReturnTime(user.userId(), request.estimatedReturnTime())));
+    }
+
+    @PatchMapping("/today/wake-time")
+    public ResponseEntity<ApiResponse<UpdateWakeTimeResponse>> updateWakeTime(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody UpdateWakeTimeRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                myService.updateWakeTime(user.userId(), request.targetWakeTime())
+        ));
     }
 }

@@ -1,6 +1,7 @@
 package com.nunnun.notification.service;
 
 import com.nunnun.notification.entity.Notification;
+import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.notification.entity.NotificationStatus;
 import com.nunnun.notification.entity.NotificationType;
 import com.nunnun.notification.push.PushMessage;
@@ -23,17 +24,20 @@ public class NotificationDispatchExecutor {
     private final DailyRoutineRepository routines;
     private final SleepSessionRepository sleepSessions;
     private final PushSender pushSender;
+    private final DeviceRepository devices;
 
     public NotificationDispatchExecutor(
             NotificationRepository notifications,
             DailyRoutineRepository routines,
             SleepSessionRepository sleepSessions,
-            PushSender pushSender
+            PushSender pushSender,
+            DeviceRepository devices
     ) {
         this.notifications = notifications;
         this.routines = routines;
         this.sleepSessions = sleepSessions;
         this.pushSender = pushSender;
+        this.devices = devices;
     }
 
     /**
@@ -58,6 +62,13 @@ public class NotificationDispatchExecutor {
             PushSendResult result = pushSender.send(new PushMessage(
                     notification.getTitle(), notification.getBody(), notification.getType(), notification.getReferenceId()
             ), tokens);
+            if (!result.unregisteredTokens().isEmpty()) {
+                devices.deleteAllByFcmTokenIn(result.unregisteredTokens());
+            }
+            if (result.disabled()) {
+                notification.cancel();
+                return;
+            }
             if (!result.hasSuccess()) {
                 notification.markFailed();
                 return;

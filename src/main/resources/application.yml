@@ -18,6 +18,10 @@ spring:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 1
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
 
 springdoc:
   api-docs:
@@ -41,6 +45,8 @@ aws:
     region: ${AWS_REGION:}
     bucket: ${AWS_S3_BUCKET:}
     wake-proof-cleanup-fixed-delay-ms: ${WAKE_PROOF_CLEANUP_FIXED_DELAY_MS:300000}
+    orphan-cleanup-fixed-delay-ms: ${WAKE_PROOF_ORPHAN_CLEANUP_FIXED_DELAY_MS:3600000}
+    orphan-grace-period-ms: ${WAKE_PROOF_ORPHAN_GRACE_PERIOD_MS:3600000}
 
 firebase:
   enabled: ${FIREBASE_ENABLED:false}
