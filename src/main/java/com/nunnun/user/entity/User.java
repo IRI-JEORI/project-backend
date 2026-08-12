@@ -50,6 +50,11 @@ public class User {
         this.deletedAt = Objects.requireNonNull(deletedAt);
     }
 
+    public void anonymize(String nickname, String email) {
+        this.nickname = Objects.requireNonNull(nickname);
+        this.email = Objects.requireNonNull(email);
+    }
+
     public boolean isDeleted() {
         return deletedAt != null;
     }
