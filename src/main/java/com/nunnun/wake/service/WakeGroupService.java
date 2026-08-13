@@ -3,7 +3,6 @@ package com.nunnun.wake.service;
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
 import com.nunnun.user.entity.User;
-import com.nunnun.user.repository.UserRepository;
 import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.dto.CreateWakeGroupResponse;
 import com.nunnun.wake.dto.InviteCodeResponse;
@@ -15,9 +14,6 @@ import com.nunnun.wake.repository.WakeGroupRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,37 +26,28 @@ public class WakeGroupService {
 
     private final WakeGroupRepository wakeGroupRepository;
     private final WakeGroupMemberRepository wakeGroupMemberRepository;
-    private final UserRepository userRepository;
     private final InviteCodeGenerator inviteCodeGenerator;
     private final WakeGroupLifecycleService lifecycleService;
     private final UserWriteGuard userWriteGuard;
-    private final Clock clock;
 
     public WakeGroupService(
             WakeGroupRepository wakeGroupRepository,
             WakeGroupMemberRepository wakeGroupMemberRepository,
-            UserRepository userRepository,
             InviteCodeGenerator inviteCodeGenerator,
             WakeGroupLifecycleService lifecycleService,
-            UserWriteGuard userWriteGuard,
-            Clock clock
+            UserWriteGuard userWriteGuard
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
-        this.userRepository = userRepository;
         this.inviteCodeGenerator = inviteCodeGenerator;
         this.lifecycleService = lifecycleService;
         this.userWriteGuard = userWriteGuard;
-        this.clock = clock;
     }
 
     @Transactional
     public CreateWakeGroupResponse createWakeGroup(Long userId, String name) {
         User creator = userWriteGuard.lockActive(userId);
-        LocalDateTime now = nowUtc();
-        WakeGroup group = wakeGroupRepository.save(WakeGroup.create(
-                name, generateAvailableInviteCode(), now.plusHours(24), creator
-        ));
+        WakeGroup group = wakeGroupRepository.save(WakeGroup.create(name, generateAvailableInviteCode(), creator));
         wakeGroupMemberRepository.save(WakeGroupMember.join(group, creator, FIRST_SLOT));
         return new CreateWakeGroupResponse(group.getId(), group.getName());
     }
@@ -70,9 +57,6 @@ public class WakeGroupService {
         User user = userWriteGuard.lockActive(userId);
         WakeGroup group = wakeGroupRepository.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        if (group.isInviteCodeExpiredAt(nowUtc())) {
-            throw new BusinessException(ErrorCode.INVITE_CODE_EXPIRED);
-        }
         if (wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(group.getId(), userId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_ALREADY_JOINED);
         }
@@ -92,37 +76,13 @@ public class WakeGroupService {
     }
 
     @Transactional
-    public InviteCodeResponse reissueInviteCode(Long userId, Long groupId) {
-        userWriteGuard.lockActive(userId);
-        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, userId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-        group.reissueInviteCode(generateAvailableInviteCode(), nowUtc().plusHours(24));
-        return inviteResponse(group);
-    }
-
-    @Transactional
     public void leaveWakeGroup(Long userId, Long groupId) {
         userWriteGuard.lockActive(userId);
         lifecycleService.leave(userId, groupId);
     }
 
-    private LocalDateTime nowUtc() {
-        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-    }
-
     private InviteCodeResponse inviteResponse(WakeGroup group) {
-        return new InviteCodeResponse(
-                group.getInviteCode(),
-                group.getInviteCodeExpiresAt() == null ? null : group.getInviteCodeExpiresAt().toInstant(ZoneOffset.UTC)
-        );
-    }
-
-    private User findActiveUser(Long userId) {
-        return userRepository.findByIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        return new InviteCodeResponse(group.getInviteCode());
     }
 
     private String generateAvailableInviteCode() {

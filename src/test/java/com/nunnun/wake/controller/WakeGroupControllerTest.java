@@ -90,7 +90,7 @@ class WakeGroupControllerTest {
         WakeGroup group = wakeGroupRepository.findAll().getFirst();
         WakeGroupMember member = wakeGroupMemberRepository.findAll().getFirst();
         assertThat(group.getCreator().getId()).isEqualTo(creator.getId());
-        assertThat(group.getInviteCode()).hasSize(12).matches("[A-Z0-9]+");
+        assertThat(group.getInviteCode()).hasSize(6).matches("[A-Z0-9]+");
         assertThat(member.getUser().getId()).isEqualTo(creator.getId());
         assertThat(member.getSlotNo()).isEqualTo((short) 1);
     }
@@ -185,7 +185,8 @@ class WakeGroupControllerTest {
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").value("INVITECODE01"));
+                .andExpect(jsonPath("$.data.inviteCode").value("INVITECODE01"))
+                .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(outsider)))
                 .andExpect(status().isForbidden())
@@ -231,24 +232,20 @@ class WakeGroupControllerTest {
     }
 
     @Test
-    void expiresAndReissuesInviteCodeAndDeletesGroupWhenLastMemberLeaves() throws Exception {
+    void keepsInviteCodeWithoutExpirationOrReissueAndDeletesGroupWhenLastMemberLeaves() throws Exception {
         User creator = saveUser("creator@example.com");
         User joiner = saveUser("joiner@example.com");
-        WakeGroup group = createGroup(creator, "OLDCODE00001");
-        group.reissueInviteCode("OLDCODE00001", LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
-        wakeGroupRepository.saveAndFlush(group);
+        WakeGroup group = createGroup(creator, "8G3FE2");
 
-        join(joiner, "OLDCODE00001")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("INVITE_CODE_EXPIRED"));
-
-        mvcResult(post("/wake-groups/{id}/invite-code/reissue", group.getId()), creator)
+        mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").isString())
-                .andExpect(jsonPath("$.data.expiresAt").isString());
-        WakeGroup reissued = wakeGroupRepository.findById(group.getId()).orElseThrow();
-        assertThat(reissued.getInviteCode()).isNotEqualTo("OLDCODE00001");
-        join(joiner, reissued.getInviteCode()).andExpect(status().isCreated());
+                .andExpect(jsonPath("$.data.inviteCode").value("8G3FE2"))
+                .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
+
+        assertThat(wakeGroupRepository.findById(group.getId()).orElseThrow().getInviteCode()).isEqualTo("8G3FE2");
+        join(joiner, "8G3FE2").andExpect(status().isCreated());
+        assertThat(wakeGroupRepository.findById(group.getId()).orElseThrow().getInviteCode()).isEqualTo("8G3FE2");
 
         mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
                         .header("Authorization", bearerTokenFor(joiner)))
@@ -315,12 +312,6 @@ class WakeGroupControllerTest {
         assertThat(wakeGroupRepository.findById(group.getId())).isEmpty();
         assertThat(wakeRequestRepository.findById(request.getId())).isEmpty();
         verify(wakeProofStorage).delete("wake-proofs/retry.jpg");
-    }
-
-    private org.springframework.test.web.servlet.ResultActions mvcResult(
-            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, User user
-    ) throws Exception {
-        return mockMvc.perform(request.header("Authorization", bearerTokenFor(user)));
     }
 
     private void clearData() {
