@@ -28,7 +28,7 @@ public class WakeGroup {
     @Column(nullable = false, length = 50)
     private String name;
 
-    @Column(name = "invite_code", unique = true, length = 20)
+    @Column(name = "invite_code", unique = true, length = 6)
     private String inviteCode;
 
     @ManyToOne(fetch = FetchType.LAZY)

@@ -50,7 +50,7 @@ class WakeRequestConcurrencyTest {
         User second = user("second-race@example.com");
         User third = user("third-race@example.com");
         User receiver = user("receiver-race@example.com");
-        WakeGroup group = groups.saveAndFlush(WakeGroup.create("Race", "RACECODE", first));
+        WakeGroup group = groups.saveAndFlush(WakeGroup.create("Race", "RACE01", first));
         List<User> all = List.of(first, second, third, receiver);
         for (int index = 0; index < all.size(); index++) {
             members.saveAndFlush(WakeGroupMember.join(group, all.get(index), (short) (index + 1)));

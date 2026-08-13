@@ -193,10 +193,10 @@ class UserControllerTest {
         sleepSessions.save(SleepSession.create(user, LocalDate.now(), LocalDateTime.now()));
         sleepFeedbacks.save(SleepFeedback.create(user, LocalDate.now(), SleepScore.GOOD));
 
-        WakeGroup wakeGroup = wakeGroups.save(WakeGroup.create("wake", "WAKECODE", other));
+        WakeGroup wakeGroup = wakeGroups.save(WakeGroup.create("wake", "WAKE01", other));
         wakeMembers.save(WakeGroupMember.join(wakeGroup, user, (short) 1));
         WakeRequest wakeRequest = wakeRequests.save(WakeRequest.send(wakeGroup, other, user, LocalDateTime.now()));
-        RoommateGroup roommateGroup = roommateGroups.save(RoommateGroup.create("room", "ROOMCODE", other));
+        RoommateGroup roommateGroup = roommateGroups.save(RoommateGroup.create("room", "ROOM01", other));
         roommateMembers.save(RoommateGroupMember.join(roommateGroup, user, (short) 1));
         roommateMembers.save(RoommateGroupMember.join(roommateGroup, other, (short) 2));
         roommateGroup.activate();
@@ -252,11 +252,11 @@ class UserControllerTest {
     void withdrawalPreservesSharedWakeGroupAndOtherUsersPrivateDataButDeletesWaitingRoommateGroup() throws Exception {
         User withdrawing = saveUser("shared-withdraw@example.com", "Withdrawing");
         User remaining = saveUser("shared-remaining@example.com", "Remaining");
-        WakeGroup sharedWakeGroup = wakeGroups.saveAndFlush(WakeGroup.create("shared", "SHAREDWAKE", remaining));
+        WakeGroup sharedWakeGroup = wakeGroups.saveAndFlush(WakeGroup.create("shared", "SHR001", remaining));
         wakeMembers.saveAndFlush(WakeGroupMember.join(sharedWakeGroup, withdrawing, (short) 1));
         wakeMembers.saveAndFlush(WakeGroupMember.join(sharedWakeGroup, remaining, (short) 2));
         RoommateGroup waitingRoommate = roommateGroups.saveAndFlush(
-                RoommateGroup.create("waiting", "WAITROOM", withdrawing)
+                RoommateGroup.create("waiting", "WAIT01", withdrawing)
         );
         roommateMembers.saveAndFlush(RoommateGroupMember.join(waitingRoommate, withdrawing, (short) 1));
         FixedSchedule remainingSchedule = schedules.saveAndFlush(FixedSchedule.create(

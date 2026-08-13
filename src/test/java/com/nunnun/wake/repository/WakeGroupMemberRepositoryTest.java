@@ -36,7 +36,7 @@ class WakeGroupMemberRepositoryTest {
     void enforcesGroupUserAndGroupSlotUniqueConstraints() {
         User creator = saveUser("creator@example.com");
         User anotherUser = saveUser("another@example.com");
-        WakeGroup group = saveGroup(creator, "CODE00000001");
+        WakeGroup group = saveGroup(creator, "CODE01");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, creator, (short) 1));
 
         assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
@@ -50,7 +50,7 @@ class WakeGroupMemberRepositoryTest {
     @Test
     void enforcesSlotNumberCheckConstraint() {
         User creator = saveUser("creator@example.com");
-        WakeGroup group = saveGroup(creator, "CODE00000002");
+        WakeGroup group = saveGroup(creator, "CODE02");
 
         assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
                 WakeGroupMember.join(group, creator, (short) 0)

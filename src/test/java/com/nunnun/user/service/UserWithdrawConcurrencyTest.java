@@ -139,7 +139,7 @@ class UserWithdrawConcurrencyTest {
     void wakeJoinAfterWithdrawBoundaryFailsAndPreservesExistingGroupMember() throws Exception {
         User owner = user("wake-owner@example.com");
         User withdrawing = user("wake-withdraw@example.com");
-        WakeGroup group = wakeGroups.saveAndFlush(WakeGroup.create("wake", "WITHDRAWWAKE", owner));
+        WakeGroup group = wakeGroups.saveAndFlush(WakeGroup.create("wake", "WAK001", owner));
         wakeMembers.saveAndFlush(WakeGroupMember.join(group, owner, (short) 1));
 
         Throwable writeResult = runWithdrawFirst(withdrawing.getId(),
@@ -156,7 +156,7 @@ class UserWithdrawConcurrencyTest {
     void roommateJoinCommittedBeforeWithdrawIsTerminatedByExistingLifecycle() throws Exception {
         User owner = user("room-owner@example.com");
         User withdrawing = user("room-withdraw@example.com");
-        RoommateGroup group = roommateGroups.saveAndFlush(RoommateGroup.create("room", "WITHDRAWROOM", owner));
+        RoommateGroup group = roommateGroups.saveAndFlush(RoommateGroup.create("room", "WDR001", owner));
         roommateMembers.saveAndFlush(RoommateGroupMember.join(group, owner, (short) 1));
 
         Throwable withdrawResult = runWriteFirst(withdrawing.getId(),

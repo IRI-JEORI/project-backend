@@ -58,7 +58,7 @@ class GroupLifecycleConcurrencyTest {
     void simultaneousWakeLeavesSerializeAndDeleteTheNowEmptyGroup() throws Exception {
         User a = user("wake-concurrent-a@example.com");
         User b = user("wake-concurrent-b@example.com");
-        WakeGroup group = wakeGroups.saveAndFlush(WakeGroup.create("wake", "CONCURRENTW", a));
+        WakeGroup group = wakeGroups.saveAndFlush(WakeGroup.create("wake", "CONW01", a));
         wakeMembers.saveAndFlush(WakeGroupMember.join(group, a, (short) 1));
         wakeMembers.saveAndFlush(WakeGroupMember.join(group, b, (short) 2));
 
@@ -76,7 +76,7 @@ class GroupLifecycleConcurrencyTest {
     void simultaneousRoommateLeavesEndWithControlledResultAndNoPartialRelationship() throws Exception {
         User a = user("room-concurrent-a@example.com");
         User b = user("room-concurrent-b@example.com");
-        RoommateGroup group = roommateGroups.saveAndFlush(RoommateGroup.create("room", "CONCURRENTR", a));
+        RoommateGroup group = roommateGroups.saveAndFlush(RoommateGroup.create("room", "CONC01", a));
         roommateMembers.saveAndFlush(RoommateGroupMember.join(group, a, (short) 1));
         roommateMembers.saveAndFlush(RoommateGroupMember.join(group, b, (short) 2));
         group.activate();
