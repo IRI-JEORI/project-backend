@@ -71,9 +71,14 @@ public class DailyRoutineService {
 
     private DailyRoutine findOrCreateTodayRoutine(Long userId) {
         LocalDate today = LocalDate.now(clock);
-        User user = findActiveUser(userId);
+        User user = findActiveUserForUpdate(userId);
         return dailyRoutineRepository.findByUserIdAndRoutineDate(userId, today)
                 .orElseGet(() -> dailyRoutineRepository.save(DailyRoutine.create(user, today)));
+    }
+
+    private User findActiveUserForUpdate(Long userId) {
+        return userRepository.findActiveByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
     private User findActiveUser(Long userId) {
