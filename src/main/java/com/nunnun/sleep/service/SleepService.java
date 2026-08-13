@@ -12,9 +12,12 @@ import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,24 +30,31 @@ public class SleepService {
     private final UserRepository userRepository;
     private final Clock clock;
     private final NotificationService notificationService;
+    private final UserWriteGuard userWriteGuard;
 
     public SleepService(
             SleepSessionRepository sleepSessionRepository,
             SleepFeedbackRepository sleepFeedbackRepository,
             UserRepository userRepository,
             Clock clock,
-            NotificationService notificationService
+            NotificationService notificationService,
+            UserWriteGuard userWriteGuard
     ) {
         this.sleepSessionRepository = sleepSessionRepository;
         this.sleepFeedbackRepository = sleepFeedbackRepository;
         this.userRepository = userRepository;
         this.clock = clock;
         this.notificationService = notificationService;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional
     public CreateSleepSessionResponse createSleepSession(Long userId) {
-        User user = findActiveUser(userId);
+        List<Long> participants = notificationService.findActiveRoommateId(userId)
+                .map(roommateId -> List.of(userId, roommateId))
+                .orElseGet(() -> List.of(userId));
+        Map<Long, User> lockedUsers = userWriteGuard.lockRequiredActiveWithParticipants(userId, participants);
+        User user = lockedUsers.get(userId);
         LocalDateTime now = LocalDateTime.now(clock);
         SleepSession session = sleepSessionRepository.save(SleepSession.create(user, now.toLocalDate(), now));
         notificationService.cancelPendingBedtimeReminders(userId);
@@ -54,7 +64,7 @@ public class SleepService {
 
     @Transactional
     public CreateSleepFeedbackResponse createSleepFeedback(Long userId, SleepScore score) {
-        User user = findActiveUser(userId);
+        User user = userWriteGuard.lockActive(userId);
         LocalDate feedbackDate = LocalDate.now(clock);
         if (sleepFeedbackRepository.existsByUserIdAndFeedbackDate(userId, feedbackDate)) {
             throw new BusinessException(ErrorCode.SLEEP_FEEDBACK_ALREADY_EXISTS);

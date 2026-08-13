@@ -14,6 +14,7 @@ import com.nunnun.global.security.jwt.GeneratedJwt;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import java.time.LocalDateTime;
@@ -30,19 +31,22 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenHashGenerator refreshTokenHashGenerator;
+    private final UserWriteGuard userWriteGuard;
 
     public AuthService(
             UserRepository userRepository,
             RefreshTokenRepository refreshTokenRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
-            RefreshTokenHashGenerator refreshTokenHashGenerator
+            RefreshTokenHashGenerator refreshTokenHashGenerator,
+            UserWriteGuard userWriteGuard
     ) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.refreshTokenHashGenerator = refreshTokenHashGenerator;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional
@@ -60,12 +64,14 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmailAndDeletedAtIsNull(request.email())
+        User foundUser = userRepository.findByEmailAndDeletedAtIsNull(request.email())
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if (!passwordEncoder.matches(request.password(), foundUser.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
+        User user = userWriteGuard.lockIfActive(foundUser.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
         GeneratedJwt accessToken = jwtTokenProvider.createAccessToken(user.getId());
         GeneratedJwt refreshToken = jwtTokenProvider.createRefreshToken(user.getId());
@@ -81,6 +87,12 @@ public class AuthService {
     @Transactional
     public LoginResponse reissue(TokenReissueRequest request) {
         Long userId = getUserIdFromRefreshToken(request.refreshToken());
+        RefreshToken candidate = findUnlockedRefreshToken(request.refreshToken());
+        if (!candidate.getUser().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+        userWriteGuard.lockIfActive(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
         RefreshToken existingToken = findRefreshToken(request.refreshToken());
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -123,6 +135,12 @@ public class AuthService {
     private RefreshToken findRefreshToken(String rawRefreshToken) {
         String tokenHash = refreshTokenHashGenerator.hash(rawRefreshToken);
         return refreshTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+    }
+
+    private RefreshToken findUnlockedRefreshToken(String rawRefreshToken) {
+        String tokenHash = refreshTokenHashGenerator.hash(rawRefreshToken);
+        return refreshTokenRepository.findUnlockedByTokenHash(tokenHash)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
     }
 

@@ -1,6 +1,8 @@
 package com.nunnun.wake.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -12,12 +14,21 @@ import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
+import com.nunnun.notification.entity.Notification;
+import com.nunnun.notification.entity.NotificationType;
+import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeGroupMember;
+import com.nunnun.wake.entity.WakeProof;
+import com.nunnun.wake.entity.WakeRequest;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
+import com.nunnun.wake.repository.WakeProofRepository;
+import com.nunnun.wake.repository.WakeRequestRepository;
+import com.nunnun.wake.storage.WakeProofStorage;
+import com.nunnun.wake.storage.WakeProofStorageException;
 import java.util.List;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -30,6 +41,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -40,6 +52,9 @@ class WakeGroupControllerTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private WakeGroupRepository wakeGroupRepository;
     @Autowired private WakeGroupMemberRepository wakeGroupMemberRepository;
+    @Autowired private WakeRequestRepository wakeRequestRepository;
+    @Autowired private WakeProofRepository wakeProofRepository;
+    @Autowired private NotificationRepository notificationRepository;
     @Autowired private SleepFeedbackRepository sleepFeedbackRepository;
     @Autowired private SleepSessionRepository sleepSessionRepository;
     @Autowired private DeviceRepository deviceRepository;
@@ -47,6 +62,7 @@ class WakeGroupControllerTest {
     @Autowired private UserRepository userRepository;
     @Autowired private JwtTokenProvider jwtTokenProvider;
     @Autowired private PasswordEncoder passwordEncoder;
+    @MockitoBean private WakeProofStorage wakeProofStorage;
 
     @BeforeEach
     void setUp() {
@@ -215,7 +231,7 @@ class WakeGroupControllerTest {
     }
 
     @Test
-    void expiresAndReissuesInviteCodeAndInvalidatesItWhenLastMemberLeaves() throws Exception {
+    void expiresAndReissuesInviteCodeAndDeletesGroupWhenLastMemberLeaves() throws Exception {
         User creator = saveUser("creator@example.com");
         User joiner = saveUser("joiner@example.com");
         WakeGroup group = createGroup(creator, "OLDCODE00001");
@@ -241,10 +257,64 @@ class WakeGroupControllerTest {
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk());
 
-        WakeGroup empty = wakeGroupRepository.findById(group.getId()).orElseThrow();
         assertThat(wakeGroupMemberRepository.findAllByWakeGroupId(group.getId())).isEmpty();
-        assertThat(empty.getInviteCode()).isNull();
-        assertThat(empty.getInviteCodeExpiresAt()).isNull();
+        assertThat(wakeGroupRepository.findById(group.getId())).isEmpty();
+    }
+
+    @Test
+    void lastMemberLeaveDeletesOnlyGroupWakeHistoryAndProofObject() throws Exception {
+        User member = saveUser("member@example.com");
+        User unrelatedUser = saveUser("unrelated@example.com");
+        WakeGroup deletedGroup = createGroup(member, "DELETECODE01");
+        WakeGroup unrelatedGroup = createGroup(unrelatedUser, "KEEPGROUP001");
+        WakeRequest deletedRequest = wakeRequestRepository.saveAndFlush(WakeRequest.send(
+                deletedGroup, member, member, LocalDateTime.now(ZoneOffset.UTC)
+        ));
+        WakeProof deletedProof = wakeProofRepository.saveAndFlush(WakeProof.verify(
+                deletedRequest, "wake-proofs/deleted.jpg", LocalDateTime.now(ZoneOffset.UTC)
+        ));
+        Notification deletedNotification = notificationRepository.saveAndFlush(Notification.createImmediate(
+                member, NotificationType.WAKE_REQUEST, "wake", "wake", deletedRequest.getId(),
+                LocalDateTime.now(ZoneOffset.UTC)
+        ));
+        Notification unrelatedNotification = notificationRepository.saveAndFlush(Notification.createImmediate(
+                unrelatedUser, NotificationType.RETURN_TIME_CHANGED, "keep", "keep", deletedRequest.getId(),
+                LocalDateTime.now(ZoneOffset.UTC)
+        ));
+
+        mockMvc.perform(delete("/wake-groups/{id}/members/me", deletedGroup.getId())
+                        .header("Authorization", bearerTokenFor(member)))
+                .andExpect(status().isOk());
+
+        assertThat(wakeGroupRepository.findById(deletedGroup.getId())).isEmpty();
+        assertThat(wakeRequestRepository.findById(deletedRequest.getId())).isEmpty();
+        assertThat(wakeProofRepository.findById(deletedProof.getId())).isEmpty();
+        assertThat(notificationRepository.findById(deletedNotification.getId())).isEmpty();
+        assertThat(notificationRepository.findById(unrelatedNotification.getId())).isPresent();
+        assertThat(wakeGroupRepository.findById(unrelatedGroup.getId())).isPresent();
+        verify(wakeProofStorage).delete("wake-proofs/deleted.jpg");
+    }
+
+    @Test
+    void storageFailureAfterCommitDoesNotRollbackLastMemberCleanup() throws Exception {
+        User member = saveUser("storage-failure@example.com");
+        WakeGroup group = createGroup(member, "S3FAILCODE01");
+        WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(
+                group, member, member, LocalDateTime.now(ZoneOffset.UTC)
+        ));
+        wakeProofRepository.saveAndFlush(WakeProof.verify(
+                request, "wake-proofs/retry.jpg", LocalDateTime.now(ZoneOffset.UTC)
+        ));
+        doThrow(new WakeProofStorageException("temporary failure"))
+                .when(wakeProofStorage).delete("wake-proofs/retry.jpg");
+
+        mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
+                        .header("Authorization", bearerTokenFor(member)))
+                .andExpect(status().isOk());
+
+        assertThat(wakeGroupRepository.findById(group.getId())).isEmpty();
+        assertThat(wakeRequestRepository.findById(request.getId())).isEmpty();
+        verify(wakeProofStorage).delete("wake-proofs/retry.jpg");
     }
 
     private org.springframework.test.web.servlet.ResultActions mvcResult(
@@ -254,6 +324,9 @@ class WakeGroupControllerTest {
     }
 
     private void clearData() {
+        notificationRepository.deleteAllInBatch();
+        wakeProofRepository.deleteAllInBatch();
+        wakeRequestRepository.deleteAllInBatch();
         wakeGroupMemberRepository.deleteAllInBatch();
         wakeGroupRepository.deleteAllInBatch();
         sleepFeedbackRepository.deleteAllInBatch();

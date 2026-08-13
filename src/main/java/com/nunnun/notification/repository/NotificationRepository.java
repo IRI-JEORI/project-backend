@@ -42,4 +42,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     Optional<Notification> findByIdForUpdate(@Param("id") Long id);
 
     List<Notification> findAllByUserIdAndStatus(Long userId, NotificationStatus status);
+
+    List<Notification> findAllByTypeAndReferenceIdIn(NotificationType type, List<Long> referenceIds);
 }

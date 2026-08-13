@@ -2,7 +2,6 @@ package com.nunnun.notification.service;
 
 import com.nunnun.notification.entity.Notification;
 import com.nunnun.device.repository.DeviceRepository;
-import com.nunnun.notification.entity.NotificationStatus;
 import com.nunnun.notification.entity.NotificationType;
 import com.nunnun.notification.push.PushMessage;
 import com.nunnun.notification.push.PushSendResult;
@@ -15,29 +14,32 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class NotificationDispatchExecutor {
-    private static final long REMINDER_INTERVAL_MINUTES = 90;
-
     private final NotificationRepository notifications;
     private final DailyRoutineRepository routines;
     private final SleepSessionRepository sleepSessions;
     private final PushSender pushSender;
     private final DeviceRepository devices;
+    private final NotificationContinuationService continuationService;
 
     public NotificationDispatchExecutor(
             NotificationRepository notifications,
             DailyRoutineRepository routines,
             SleepSessionRepository sleepSessions,
             PushSender pushSender,
-            DeviceRepository devices
+            DeviceRepository devices,
+            NotificationContinuationService continuationService
     ) {
         this.notifications = notifications;
         this.routines = routines;
         this.sleepSessions = sleepSessions;
         this.pushSender = pushSender;
         this.devices = devices;
+        this.continuationService = continuationService;
     }
 
     /**
@@ -75,7 +77,7 @@ public class NotificationDispatchExecutor {
             }
             notification.markSent(now);
             if (notification.getType() == NotificationType.BEDTIME_REMINDER) {
-                createNextReminder(notification);
+                scheduleContinuationAfterCommit(notification.getId());
             }
         } catch (RuntimeException exception) {
             notification.markFailed();
@@ -95,28 +97,13 @@ public class NotificationDispatchExecutor {
         );
     }
 
-    private void createNextReminder(Notification sent) {
-        DailyRoutine routine = routines.findById(sent.getReferenceId()).orElse(null);
-        if (routine == null || routine.getTargetWakeTime() == null) {
-            return;
-        }
-        LocalDateTime lastAt = wakeAt(routine).minusMinutes(REMINDER_INTERVAL_MINUTES);
-        if (!sent.getScheduledAt().isBefore(lastAt)) {
-            return;
-        }
-        if (notifications.existsByUserIdAndTypeAndReferenceIdAndStatus(
-                sent.getUser().getId(), NotificationType.BEDTIME_REMINDER,
-                sent.getReferenceId(), NotificationStatus.PENDING
-        )) {
-            return;
-        }
-        LocalDateTime nextAt = sent.getScheduledAt().plusMinutes(REMINDER_INTERVAL_MINUTES);
-        if (nextAt.isAfter(lastAt)) {
-            nextAt = lastAt;
-        }
-        notifications.save(Notification.createScheduled(
-                sent.getUser(), sent.getType(), sent.getTitle(), sent.getBody(), sent.getReferenceId(), nextAt
-        ));
+    private void scheduleContinuationAfterCommit(Long notificationId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                continuationService.createNextBedtimeReminder(notificationId);
+            }
+        });
     }
 
     private LocalDateTime wakeAt(DailyRoutine routine) {

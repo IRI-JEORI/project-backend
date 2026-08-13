@@ -5,6 +5,7 @@ import com.nunnun.global.exception.ErrorCode;
 import com.nunnun.notification.service.NotificationService;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.dto.CreateWakeRequestResponse;
 import com.nunnun.wake.dto.WakeRequestDetailResponse;
 import com.nunnun.wake.entity.WakeGroup;
@@ -14,6 +15,8 @@ import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +29,7 @@ public class WakeRequestService {
     private final UserRepository userRepository;
     private final Clock clock;
     private final NotificationService notificationService;
+    private final UserWriteGuard userWriteGuard;
 
     public WakeRequestService(
             WakeGroupRepository wakeGroupRepository,
@@ -33,7 +37,8 @@ public class WakeRequestService {
             WakeRequestRepository wakeRequestRepository,
             UserRepository userRepository,
             Clock clock,
-            NotificationService notificationService
+            NotificationService notificationService,
+            UserWriteGuard userWriteGuard
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
@@ -41,6 +46,7 @@ public class WakeRequestService {
         this.userRepository = userRepository;
         this.clock = clock;
         this.notificationService = notificationService;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional
@@ -48,14 +54,14 @@ public class WakeRequestService {
         if (senderId.equals(receiverId)) {
             throw new BusinessException(ErrorCode.CANNOT_WAKE_SELF);
         }
-        WakeGroup group = wakeGroupRepository.findById(groupId)
+        Map<Long, User> lockedUsers = userWriteGuard.lockActiveInOrder(List.of(senderId, receiverId));
+        User sender = lockedUsers.get(senderId);
+        User receiver = lockedUsers.get(receiverId);
+        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        User sender = findActiveUser(senderId);
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, senderId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_SENDER_NOT_MEMBER);
         }
-        User receiver = userRepository.findActiveByIdForUpdate(receiverId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, receiverId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_RECEIVER_NOT_MEMBER);
         }
