@@ -19,6 +19,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByIdAndDeletedAtIsNull(Long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select user from User user where user.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select user from User user where user.id = :id and user.deletedAt is null")
     Optional<User> findActiveByIdForUpdate(@Param("id") Long id);
 }

@@ -229,11 +229,13 @@ class UserControllerTest {
         assertThat(wakeMembers.findAllByUserId(user.getId())).isEmpty();
         assertThat(roommateMembers.findAllByUserId(user.getId())).isEmpty();
         assertThat(manuals.findByRoommateGroupIdAndTargetUserId(roommateGroup.getId(), user.getId())).isEmpty();
-        assertThat(notifications.findById(pending.getId()).orElseThrow().getStatus()).isEqualTo(NotificationStatus.CANCELLED);
+        assertThat(notifications.findById(pending.getId())).isEmpty();
         assertThat(notifications.findById(sent.getId()).orElseThrow().getStatus()).isEqualTo(NotificationStatus.SENT);
         assertThat(notifications.findById(failed.getId()).orElseThrow().getStatus()).isEqualTo(NotificationStatus.FAILED);
-        assertThat(wakeRequests.findById(wakeRequest.getId())).isPresent();
-        assertThat(complaints.findById(complaint.getId())).isPresent();
+        assertThat(wakeRequests.findById(wakeRequest.getId())).isEmpty();
+        assertThat(wakeGroups.findById(wakeGroup.getId())).isEmpty();
+        assertThat(complaints.findById(complaint.getId())).isEmpty();
+        assertThat(roommateGroups.findById(roommateGroup.getId())).isEmpty();
         assertThat(userRepository.findById(other.getId())).isPresent();
 
         mockMvc.perform(get("/users/me").header("Authorization", accessToken)).andExpect(status().isUnauthorized());
@@ -244,6 +246,38 @@ class UserControllerTest {
                                 "password", "password123!", "passwordConfirmation", "password123!"
                         ))))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void withdrawalPreservesSharedWakeGroupAndOtherUsersPrivateDataButDeletesWaitingRoommateGroup() throws Exception {
+        User withdrawing = saveUser("shared-withdraw@example.com", "Withdrawing");
+        User remaining = saveUser("shared-remaining@example.com", "Remaining");
+        WakeGroup sharedWakeGroup = wakeGroups.saveAndFlush(WakeGroup.create("shared", "SHAREDWAKE", remaining));
+        wakeMembers.saveAndFlush(WakeGroupMember.join(sharedWakeGroup, withdrawing, (short) 1));
+        wakeMembers.saveAndFlush(WakeGroupMember.join(sharedWakeGroup, remaining, (short) 2));
+        RoommateGroup waitingRoommate = roommateGroups.saveAndFlush(
+                RoommateGroup.create("waiting", "WAITROOM", withdrawing)
+        );
+        roommateMembers.saveAndFlush(RoommateGroupMember.join(waitingRoommate, withdrawing, (short) 1));
+        FixedSchedule remainingSchedule = schedules.saveAndFlush(FixedSchedule.create(
+                remaining, "keep", DayOfWeek.TUESDAY, LocalTime.of(9, 0), LocalTime.of(10, 0)
+        ));
+        DailyRoutine remainingRoutine = routines.saveAndFlush(DailyRoutine.create(remaining, LocalDate.now()));
+        SleepSession remainingSleep = sleepSessions.saveAndFlush(
+                SleepSession.create(remaining, LocalDate.now(), LocalDateTime.now())
+        );
+
+        mockMvc.perform(delete("/users/me").header("Authorization", bearerTokenFor(withdrawing)))
+                .andExpect(status().isOk());
+
+        assertThat(wakeGroups.findById(sharedWakeGroup.getId())).isPresent();
+        assertThat(wakeMembers.findByWakeGroupIdAndUserId(sharedWakeGroup.getId(), withdrawing.getId())).isEmpty();
+        assertThat(wakeMembers.findByWakeGroupIdAndUserId(sharedWakeGroup.getId(), remaining.getId())).isPresent();
+        assertThat(roommateGroups.findById(waitingRoommate.getId())).isEmpty();
+        assertThat(schedules.findById(remainingSchedule.getId())).isPresent();
+        assertThat(routines.findById(remainingRoutine.getId())).isPresent();
+        assertThat(sleepSessions.findById(remainingSleep.getId())).isPresent();
+        assertThat(userRepository.findByIdAndDeletedAtIsNull(remaining.getId())).isPresent();
     }
 
     private User saveUser(String email, String nickname) {

@@ -11,6 +11,10 @@ import com.nunnun.global.security.jwt.JwtTokenProvider;
 import com.nunnun.roommate.entity.RoommateGroup;
 import com.nunnun.roommate.entity.RoommateGroupMember;
 import com.nunnun.roommate.entity.RoommateGroupStatus;
+import com.nunnun.roommate.entity.RoommateComplaint;
+import com.nunnun.roommate.entity.RoommateBehaviorManual;
+import com.nunnun.roommate.repository.RoommateComplaintRepository;
+import com.nunnun.roommate.repository.RoommateBehaviorManualRepository;
 import com.nunnun.roommate.repository.RoommateGroupMemberRepository;
 import com.nunnun.roommate.repository.RoommateGroupRepository;
 import com.nunnun.routine.entity.DailyRoutine;
@@ -54,6 +58,8 @@ class RoommateGroupControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private RoommateGroupRepository groups;
     @Autowired private RoommateGroupMemberRepository members;
+    @Autowired private RoommateComplaintRepository complaints;
+    @Autowired private RoommateBehaviorManualRepository manuals;
     @Autowired private DailyRoutineRepository routines;
     @Autowired private FixedScheduleRepository schedules;
     @Autowired private SleepSessionRepository sleepSessions;
@@ -67,13 +73,15 @@ class RoommateGroupControllerTest {
         sleepSessions.deleteAllInBatch();
         schedules.deleteAllInBatch();
         routines.deleteAllInBatch();
+        manuals.deleteAllInBatch();
+        complaints.deleteAllInBatch();
         members.deleteAllInBatch();
         groups.deleteAllInBatch();
         users.deleteAllInBatch();
     }
 
     @Test
-    void createsJoinsAndLeavesRoommateGroup() throws Exception {
+    void activeGroupLeaveTerminatesRelationshipAndDeletesGroupData() throws Exception {
         User a = user("a", "a@x.com");
         User b = user("b", "b@x.com");
 
@@ -92,10 +100,88 @@ class RoommateGroupControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
 
+        RoommateComplaint complaint = complaints.saveAndFlush(RoommateComplaint.create(group, a, b, "complaint"));
+        RoommateBehaviorManual manual = manuals.saveAndFlush(RoommateBehaviorManual.create(
+                group, b, "manual", LocalDateTime.now()
+        ));
+
         mvc.perform(delete("/roommate-groups/{id}/members/me", group.getId())
                         .header("Authorization", token(b)))
                 .andExpect(status().isOk());
-        assertThat(groups.findById(group.getId()).orElseThrow().getStatus()).isEqualTo(RoommateGroupStatus.WAITING);
+        assertThat(groups.findById(group.getId())).isEmpty();
+        assertThat(members.findAllByRoommateGroupId(group.getId())).isEmpty();
+        assertThat(complaints.findById(complaint.getId())).isEmpty();
+        assertThat(manuals.findById(manual.getId())).isEmpty();
+    }
+
+    @Test
+    void waitingGroupOwnerLeaveDeletesGroupAndAbnormalDependentData() throws Exception {
+        User owner = user("Owner", "owner@x.com");
+        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Waiting", "WAITCODE", owner));
+        members.saveAndFlush(RoommateGroupMember.join(group, owner, (short) 1));
+        RoommateComplaint complaint = complaints.saveAndFlush(RoommateComplaint.create(group, owner, owner, "data"));
+        RoommateBehaviorManual manual = manuals.saveAndFlush(RoommateBehaviorManual.create(
+                group, owner, "manual", LocalDateTime.now()
+        ));
+
+        mvc.perform(delete("/roommate-groups/{id}/members/me", group.getId())
+                        .header("Authorization", token(owner)))
+                .andExpect(status().isOk());
+
+        assertThat(groups.findById(group.getId())).isEmpty();
+        assertThat(members.findAllByRoommateGroupId(group.getId())).isEmpty();
+        assertThat(complaints.findById(complaint.getId())).isEmpty();
+        assertThat(manuals.findById(manual.getId())).isEmpty();
+        mvc.perform(get("/roommate-groups/{id}", group.getId()).header("Authorization", token(owner)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ROOMMATE_GROUP_NOT_FOUND"));
+        mvc.perform(get("/roommate-groups/{id}/sleep-manual", group.getId())
+                        .header("Authorization", token(owner)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ROOMMATE_GROUP_NOT_FOUND"));
+    }
+
+    @Test
+    void terminatedGroupCannotBeReusedAndNewRelationshipDoesNotAffectOtherGroup() throws Exception {
+        User a = user("A", "reuse-a@x.com");
+        User b = user("B", "reuse-b@x.com");
+        User c = user("C", "reuse-c@x.com");
+        User d = user("D", "unrelated-d@x.com");
+        User e = user("E", "unrelated-e@x.com");
+        RoommateGroup terminated = activeGroup(a, b);
+        String terminatedCode = terminated.getInviteCode();
+        RoommateGroup unrelated = groups.saveAndFlush(RoommateGroup.create("Other", "OTHERCODE", d));
+        members.saveAndFlush(RoommateGroupMember.join(unrelated, d, (short) 1));
+        members.saveAndFlush(RoommateGroupMember.join(unrelated, e, (short) 2));
+        unrelated.activate();
+        groups.saveAndFlush(unrelated);
+        RoommateComplaint unrelatedComplaint = complaints.saveAndFlush(
+                RoommateComplaint.create(unrelated, d, e, "keep")
+        );
+
+        mvc.perform(delete("/roommate-groups/{id}/members/me", terminated.getId())
+                        .header("Authorization", token(b)))
+                .andExpect(status().isOk());
+        mvc.perform(post("/roommate-groups/join").header("Authorization", token(c))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\"" + terminatedCode + "\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ROOMMATE_GROUP_NOT_FOUND"));
+
+        mvc.perform(post("/roommate-groups").header("Authorization", token(a))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"New room\"}"))
+                .andExpect(status().isCreated());
+        RoommateGroup newGroup = members.findAllRoommateGroupsByUserId(a.getId()).getFirst();
+        assertThat(newGroup.getId()).isNotEqualTo(terminated.getId());
+        mvc.perform(post("/roommate-groups/join").header("Authorization", token(c))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\"" + newGroup.getInviteCode() + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+
+        assertThat(groups.findById(unrelated.getId())).isPresent();
+        assertThat(members.findAllByRoommateGroupId(unrelated.getId())).hasSize(2);
+        assertThat(complaints.findById(unrelatedComplaint.getId())).isPresent();
     }
 
     @Test

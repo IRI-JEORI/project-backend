@@ -10,6 +10,7 @@ import com.nunnun.schedule.entity.FixedSchedule;
 import com.nunnun.schedule.repository.FixedScheduleRepository;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.util.Comparator;
@@ -22,10 +23,13 @@ public class FixedScheduleService {
 
     private final FixedScheduleRepository fixedScheduleRepository;
     private final UserRepository userRepository;
+    private final UserWriteGuard userWriteGuard;
 
-    public FixedScheduleService(FixedScheduleRepository fixedScheduleRepository, UserRepository userRepository) {
+    public FixedScheduleService(FixedScheduleRepository fixedScheduleRepository, UserRepository userRepository,
+                                UserWriteGuard userWriteGuard) {
         this.fixedScheduleRepository = fixedScheduleRepository;
         this.userRepository = userRepository;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional(readOnly = true)
@@ -42,7 +46,7 @@ public class FixedScheduleService {
     @Transactional
     public FixedScheduleResponse createFixedSchedule(Long userId, CreateFixedScheduleRequest request) {
         validateTimeRange(request.startTime(), request.endTime());
-        User user = findActiveUser(userId);
+        User user = userWriteGuard.lockActive(userId);
         FixedSchedule schedule = fixedScheduleRepository.save(FixedSchedule.create(
                 user,
                 request.title(),
@@ -56,7 +60,7 @@ public class FixedScheduleService {
     @Transactional
     public ImportFixedSchedulesResponse importFixedSchedules(Long userId, List<CreateFixedScheduleRequest> requests) {
         requests.forEach(request -> validateTimeRange(request.startTime(), request.endTime()));
-        User user = findActiveUser(userId);
+        User user = userWriteGuard.lockActive(userId);
         List<FixedSchedule> schedules = requests.stream()
                 .map(request -> FixedSchedule.create(
                         user,
@@ -73,6 +77,7 @@ public class FixedScheduleService {
 
     @Transactional
     public FixedScheduleResponse updateFixedSchedule(Long userId, Long scheduleId, UpdateFixedScheduleRequest request) {
+        userWriteGuard.lockActive(userId);
         FixedSchedule schedule = findOwnedSchedule(scheduleId, userId);
         String title = request.title() != null ? request.title() : schedule.getTitle();
         DayOfWeek dayOfWeek = request.dayOfWeek() != null ? request.dayOfWeek() : schedule.getDayOfWeek();
@@ -85,6 +90,7 @@ public class FixedScheduleService {
 
     @Transactional
     public void deleteFixedSchedule(Long userId, Long scheduleId) {
+        userWriteGuard.lockActive(userId);
         fixedScheduleRepository.delete(findOwnedSchedule(scheduleId, userId));
     }
 

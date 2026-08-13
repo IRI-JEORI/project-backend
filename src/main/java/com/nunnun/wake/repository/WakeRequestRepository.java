@@ -13,6 +13,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> {
 
+    List<WakeRequest> findAllByWakeGroupId(Long wakeGroupId);
+
     @Query("select request from WakeRequest request join fetch request.sender join fetch request.receiver where request.id = :id")
     Optional<WakeRequest> findDetailById(@Param("id") Long id);
 

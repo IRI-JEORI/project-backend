@@ -7,6 +7,7 @@ import com.nunnun.wake.entity.WakeProof;
 import com.nunnun.wake.entity.WakeRequest;
 import com.nunnun.wake.repository.WakeProofRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,15 +20,18 @@ public class WakeProofPersistenceService {
     private final WakeRequestRepository wakeRequestRepository;
     private final WakeProofRepository wakeProofRepository;
     private final Clock clock;
+    private final UserWriteGuard userWriteGuard;
 
     public WakeProofPersistenceService(
             WakeRequestRepository wakeRequestRepository,
             WakeProofRepository wakeProofRepository,
-            Clock clock
+            Clock clock,
+            UserWriteGuard userWriteGuard
     ) {
         this.wakeRequestRepository = wakeRequestRepository;
         this.wakeProofRepository = wakeProofRepository;
         this.clock = clock;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional(readOnly = true)
@@ -39,6 +43,7 @@ public class WakeProofPersistenceService {
 
     @Transactional
     public CreateWakeProofResponse persistVerifiedProof(Long requestId, Long userId, String objectKey) {
+        userWriteGuard.lockActive(userId);
         WakeRequest request = wakeRequestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_REQUEST_NOT_FOUND));
         validateReceiverAndProof(request, userId);

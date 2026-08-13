@@ -18,6 +18,7 @@ import com.nunnun.sleep.repository.SleepSessionRepository;
 import com.nunnun.sleep.service.SleepStateCalculator;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.service.InviteCodeGenerator;
 import java.time.Clock;
 import java.time.Duration;
@@ -43,12 +44,16 @@ public class RoommateGroupService {
     private final SleepSessionRepository sleepSessions;
     private final Clock clock;
     private final SleepStateCalculator sleepStateCalculator;
+    private final RoommateGroupLifecycleService lifecycleService;
+    private final UserWriteGuard userWriteGuard;
 
     public RoommateGroupService(RoommateGroupRepository groups, RoommateGroupMemberRepository members,
                                 UserRepository users, InviteCodeGenerator codes,
                                 DailyRoutineRepository routines, FixedScheduleRepository schedules,
                                 SleepSessionRepository sleepSessions, Clock clock,
-                                SleepStateCalculator sleepStateCalculator) {
+                                SleepStateCalculator sleepStateCalculator,
+                                RoommateGroupLifecycleService lifecycleService,
+                                UserWriteGuard userWriteGuard) {
         this.groups = groups;
         this.members = members;
         this.users = users;
@@ -58,11 +63,13 @@ public class RoommateGroupService {
         this.sleepSessions = sleepSessions;
         this.clock = clock;
         this.sleepStateCalculator = sleepStateCalculator;
+        this.lifecycleService = lifecycleService;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional
     public RoommateGroup create(Long userId, String name) {
-        User user = user(userId);
+        User user = userWriteGuard.lockActive(userId);
         ensureFree(userId);
         RoommateGroup group = groups.save(RoommateGroup.create(name, code(), nowUtc().plusHours(24), user));
         members.save(RoommateGroupMember.join(group, user, (short) 1));
@@ -71,12 +78,12 @@ public class RoommateGroupService {
 
     @Transactional
     public RoommateGroup join(Long userId, String inviteCode) {
+        User user = userWriteGuard.lockActive(userId);
         RoommateGroup group = groups.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
         if (group.isInviteCodeExpiredAt(nowUtc())) {
             throw new BusinessException(ErrorCode.INVITE_CODE_EXPIRED);
         }
-        User user = user(userId);
         ensureFree(userId);
         if (group.getStatus() != RoommateGroupStatus.WAITING || members.countByRoommateGroupId(group.getId()) != 1) {
             throw new BusinessException(ErrorCode.ROOMMATE_GROUP_FULL);
@@ -122,20 +129,8 @@ public class RoommateGroupService {
 
     @Transactional
     public void leave(Long userId, Long groupId) {
-        user(userId);
-        RoommateGroup lockedGroup = groups.findByIdForUpdate(groupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
-        RoommateGroupMember member = members.findByRoommateGroupIdAndUserId(groupId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_MEMBER_NOT_FOUND));
-        RoommateGroup group = lockedGroup;
-        members.delete(member);
-        members.flush();
-        if (members.countByRoommateGroupId(groupId) == 1) {
-            group.waitForRoommate();
-        } else if (members.countByRoommateGroupId(groupId) == 0) {
-            group.waitForRoommate();
-            group.invalidateInviteCode();
-        }
+        userWriteGuard.lockActive(userId);
+        lifecycleService.leave(userId, groupId);
     }
 
     @Transactional(readOnly = true)
@@ -153,7 +148,7 @@ public class RoommateGroupService {
 
     @Transactional
     public com.nunnun.roommate.dto.RoommateInviteCodeResponse reissueInviteCode(Long userId, Long groupId) {
-        user(userId);
+        userWriteGuard.lockActive(userId);
         RoommateGroup group = groups.findByIdForUpdate(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
         if (!members.existsByRoommateGroupIdAndUserId(groupId, userId)) {

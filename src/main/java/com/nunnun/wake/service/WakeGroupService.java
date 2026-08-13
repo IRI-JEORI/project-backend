@@ -3,7 +3,7 @@ package com.nunnun.wake.service;
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
 import com.nunnun.user.entity.User;
-import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.dto.CreateWakeGroupResponse;
 import com.nunnun.wake.dto.InviteCodeResponse;
 import com.nunnun.wake.dto.JoinWakeGroupResponse;
@@ -26,24 +26,27 @@ public class WakeGroupService {
 
     private final WakeGroupRepository wakeGroupRepository;
     private final WakeGroupMemberRepository wakeGroupMemberRepository;
-    private final UserRepository userRepository;
     private final InviteCodeGenerator inviteCodeGenerator;
+    private final WakeGroupLifecycleService lifecycleService;
+    private final UserWriteGuard userWriteGuard;
 
     public WakeGroupService(
             WakeGroupRepository wakeGroupRepository,
             WakeGroupMemberRepository wakeGroupMemberRepository,
-            UserRepository userRepository,
-            InviteCodeGenerator inviteCodeGenerator
+            InviteCodeGenerator inviteCodeGenerator,
+            WakeGroupLifecycleService lifecycleService,
+            UserWriteGuard userWriteGuard
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
-        this.userRepository = userRepository;
         this.inviteCodeGenerator = inviteCodeGenerator;
+        this.lifecycleService = lifecycleService;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional
     public CreateWakeGroupResponse createWakeGroup(Long userId, String name) {
-        User creator = findActiveUser(userId);
+        User creator = userWriteGuard.lockActive(userId);
         WakeGroup group = wakeGroupRepository.save(WakeGroup.create(name, generateAvailableInviteCode(), creator));
         wakeGroupMemberRepository.save(WakeGroupMember.join(group, creator, FIRST_SLOT));
         return new CreateWakeGroupResponse(group.getId(), group.getName());
@@ -51,9 +54,9 @@ public class WakeGroupService {
 
     @Transactional
     public JoinWakeGroupResponse joinWakeGroup(Long userId, String inviteCode) {
+        User user = userWriteGuard.lockActive(userId);
         WakeGroup group = wakeGroupRepository.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        User user = findActiveUser(userId);
         if (wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(group.getId(), userId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_ALREADY_JOINED);
         }
@@ -73,38 +76,13 @@ public class WakeGroupService {
     }
 
     @Transactional
-    public InviteCodeResponse reissueInviteCode(Long userId, Long groupId) {
-        findActiveUser(userId);
-        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        if (!group.getCreator().getId().equals(userId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-        group.reissueInviteCode(generateAvailableInviteCode());
-        return inviteResponse(group);
-    }
-
-    @Transactional
     public void leaveWakeGroup(Long userId, Long groupId) {
-        findActiveUser(userId);
-        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        WakeGroupMember member = wakeGroupMemberRepository.findByWakeGroupIdAndUserId(groupId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_MEMBER_NOT_FOUND));
-        wakeGroupMemberRepository.delete(member);
-        wakeGroupMemberRepository.flush();
-        if (wakeGroupMemberRepository.findAllByWakeGroupId(groupId).isEmpty()) {
-            group.invalidateInviteCode();
-        }
+        userWriteGuard.lockActive(userId);
+        lifecycleService.leave(userId, groupId);
     }
 
     private InviteCodeResponse inviteResponse(WakeGroup group) {
         return new InviteCodeResponse(group.getInviteCode());
-    }
-
-    private User findActiveUser(Long userId) {
-        return userRepository.findByIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
     private String generateAvailableInviteCode() {

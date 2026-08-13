@@ -52,14 +52,6 @@ public class WakeGroup {
         return new WakeGroup(name, inviteCode, creator);
     }
 
-    public void reissueInviteCode(String inviteCode) {
-        this.inviteCode = Objects.requireNonNull(inviteCode);
-    }
-
-    public void invalidateInviteCode() {
-        this.inviteCode = null;
-    }
-
     public Long getId() {
         return id;
     }

@@ -13,15 +13,13 @@ import com.nunnun.schedule.repository.FixedScheduleRepository;
 import com.nunnun.routine.repository.DailyRoutineRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
-import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeGroupMember;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
-import com.nunnun.wake.repository.WakeGroupRepository;
-import com.nunnun.roommate.entity.RoommateGroup;
 import com.nunnun.roommate.entity.RoommateGroupMember;
 import com.nunnun.roommate.repository.RoommateGroupMemberRepository;
-import com.nunnun.roommate.repository.RoommateGroupRepository;
 import com.nunnun.roommate.repository.RoommateBehaviorManualRepository;
+import com.nunnun.roommate.service.RoommateGroupLifecycleService;
+import com.nunnun.wake.service.WakeGroupLifecycleService;
 import com.nunnun.notification.entity.Notification;
 import com.nunnun.notification.entity.NotificationStatus;
 import com.nunnun.notification.repository.NotificationRepository;
@@ -43,11 +41,12 @@ public class UserService {
     private final SleepSessionRepository sleepSessions;
     private final SleepFeedbackRepository sleepFeedbacks;
     private final WakeGroupMemberRepository wakeMembers;
-    private final WakeGroupRepository wakeGroups;
     private final RoommateGroupMemberRepository roommateMembers;
-    private final RoommateGroupRepository roommateGroups;
     private final RoommateBehaviorManualRepository manuals;
     private final NotificationRepository notifications;
+    private final WakeGroupLifecycleService wakeGroupLifecycle;
+    private final RoommateGroupLifecycleService roommateGroupLifecycle;
+    private final UserWriteGuard userWriteGuard;
     private final Clock clock;
 
     public UserService(
@@ -59,11 +58,12 @@ public class UserService {
             SleepSessionRepository sleepSessions,
             SleepFeedbackRepository sleepFeedbacks,
             WakeGroupMemberRepository wakeMembers,
-            WakeGroupRepository wakeGroups,
             RoommateGroupMemberRepository roommateMembers,
-            RoommateGroupRepository roommateGroups,
             RoommateBehaviorManualRepository manuals,
             NotificationRepository notifications,
+            WakeGroupLifecycleService wakeGroupLifecycle,
+            RoommateGroupLifecycleService roommateGroupLifecycle,
+            UserWriteGuard userWriteGuard,
             Clock clock
     ) {
         this.userRepository = userRepository;
@@ -74,11 +74,12 @@ public class UserService {
         this.sleepSessions = sleepSessions;
         this.sleepFeedbacks = sleepFeedbacks;
         this.wakeMembers = wakeMembers;
-        this.wakeGroups = wakeGroups;
         this.roommateMembers = roommateMembers;
-        this.roommateGroups = roommateGroups;
         this.manuals = manuals;
         this.notifications = notifications;
+        this.wakeGroupLifecycle = wakeGroupLifecycle;
+        this.roommateGroupLifecycle = roommateGroupLifecycle;
+        this.userWriteGuard = userWriteGuard;
         this.clock = clock;
     }
 
@@ -89,21 +90,18 @@ public class UserService {
 
     @Transactional
     public UserResponse updateMyInfo(Long userId, UpdateUserRequest request) {
-        User user = findActiveUser(userId);
+        User user = userWriteGuard.lockActive(userId);
         user.changeNickname(request.nickname());
         return UserResponse.from(user);
     }
 
     @Transactional
     public void withdraw(Long userId) {
-        User user = findActiveUser(userId);
+        User user = userWriteGuard.lockActive(userId);
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
         for (RefreshToken refreshToken : refreshTokenRepository.findByUserAndRevokedAtIsNull(user)) {
             refreshToken.revoke(now);
         }
-        notifications.findAllByUserIdAndStatus(userId, NotificationStatus.PENDING).stream()
-                .map(Notification::getId)
-                .forEach(id -> notifications.findByIdForUpdate(id).ifPresent(Notification::cancel));
         devices.deleteAllByUserId(userId);
         schedules.deleteAllByUserId(userId);
         routines.deleteAllByUserId(userId);
@@ -112,35 +110,30 @@ public class UserService {
         manuals.deleteAllByTargetUserId(userId);
         removeWakeMemberships(userId);
         removeRoommateMemberships(userId);
+        notifications.findAllByUserIdAndStatus(userId, NotificationStatus.PENDING).stream()
+                .map(Notification::getId)
+                .forEach(id -> notifications.findByIdForUpdate(id).ifPresent(Notification::cancel));
         user.anonymize("탈퇴한 사용자", "deleted_" + userId + "_" + UUID.randomUUID() + "@invalid.local");
         user.softDelete(now);
     }
 
     private void removeWakeMemberships(Long userId) {
-        for (WakeGroupMember membership : wakeMembers.findAllByUserId(userId)) {
-            WakeGroup group = wakeGroups.findByIdForUpdate(membership.getWakeGroup().getId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-            wakeMembers.delete(membership);
-            wakeMembers.flush();
-            if (wakeMembers.findAllByWakeGroupId(group.getId()).isEmpty()) {
-                group.invalidateInviteCode();
-            }
+        for (Long groupId : wakeMembers.findAllByUserId(userId).stream()
+                .map(WakeGroupMember::getWakeGroup)
+                .map(group -> group.getId())
+                .distinct()
+                .toList()) {
+            wakeGroupLifecycle.withdraw(userId, groupId);
         }
     }
 
     private void removeRoommateMemberships(Long userId) {
-        for (RoommateGroupMember membership : roommateMembers.findAllByUserId(userId)) {
-            RoommateGroup group = roommateGroups.findByIdForUpdate(membership.getRoommateGroup().getId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
-            roommateMembers.delete(membership);
-            roommateMembers.flush();
-            long count = roommateMembers.countByRoommateGroupId(group.getId());
-            if (count < 2) {
-                group.waitForRoommate();
-            }
-            if (count == 0) {
-                group.invalidateInviteCode();
-            }
+        for (Long groupId : roommateMembers.findAllByUserId(userId).stream()
+                .map(RoommateGroupMember::getRoommateGroup)
+                .map(group -> group.getId())
+                .distinct()
+                .toList()) {
+            roommateGroupLifecycle.withdraw(userId, groupId);
         }
     }
 

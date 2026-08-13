@@ -169,4 +169,8 @@ public class NotificationService {
                 .filter(user -> !user.getId().equals(userId) && !user.isDeleted())
                 .findFirst();
     }
+
+    public Optional<Long> findActiveRoommateId(Long userId) {
+        return roommateOf(userId).map(User::getId);
+    }
 }

@@ -8,6 +8,7 @@ import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
+import com.nunnun.user.service.UserWriteGuard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,16 +17,18 @@ public class DeviceService {
 
     private final DeviceRepository deviceRepository;
     private final UserRepository userRepository;
+    private final UserWriteGuard userWriteGuard;
 
-    public DeviceService(DeviceRepository deviceRepository, UserRepository userRepository) {
+    public DeviceService(DeviceRepository deviceRepository, UserRepository userRepository,
+                         UserWriteGuard userWriteGuard) {
         this.deviceRepository = deviceRepository;
         this.userRepository = userRepository;
+        this.userWriteGuard = userWriteGuard;
     }
 
     @Transactional
     public RegisterDeviceResponse register(Long userId, RegisterDeviceRequest request) {
-        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User user = userWriteGuard.lockActive(userId);
 
         UserDevice userDevice = deviceRepository.findByFcmToken(request.fcmToken())
                 .map(existingDevice -> {
