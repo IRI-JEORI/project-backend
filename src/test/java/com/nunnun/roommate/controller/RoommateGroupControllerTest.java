@@ -117,7 +117,7 @@ class RoommateGroupControllerTest {
     @Test
     void waitingGroupOwnerLeaveDeletesGroupAndAbnormalDependentData() throws Exception {
         User owner = user("Owner", "owner@x.com");
-        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Waiting", "WAITCODE", owner));
+        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Waiting", "WAIT02", owner));
         members.saveAndFlush(RoommateGroupMember.join(group, owner, (short) 1));
         RoommateComplaint complaint = complaints.saveAndFlush(RoommateComplaint.create(group, owner, owner, "data"));
         RoommateBehaviorManual manual = manuals.saveAndFlush(RoommateBehaviorManual.create(
@@ -150,7 +150,7 @@ class RoommateGroupControllerTest {
         User e = user("E", "unrelated-e@x.com");
         RoommateGroup terminated = activeGroup(a, b);
         String terminatedCode = terminated.getInviteCode();
-        RoommateGroup unrelated = groups.saveAndFlush(RoommateGroup.create("Other", "OTHERCODE", d));
+        RoommateGroup unrelated = groups.saveAndFlush(RoommateGroup.create("Other", "OTHR01", d));
         members.saveAndFlush(RoommateGroupMember.join(unrelated, d, (short) 1));
         members.saveAndFlush(RoommateGroupMember.join(unrelated, e, (short) 2));
         unrelated.activate();
@@ -274,28 +274,21 @@ class RoommateGroupControllerTest {
     }
 
     @Test
-    void expiresAndReissuesInviteCodeForMembersOnly() throws Exception {
+    void inviteCodeDoesNotExpireAndCannotBeReissued() throws Exception {
         User member = user("Member", "member@x.com");
         User outsider = user("Outsider", "outsider@x.com");
-        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Room", "OLDROOMCODE", member));
+        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Room", "ABC123", member));
         members.saveAndFlush(RoommateGroupMember.join(group, member, (short) 1));
-        group.reissueInviteCode("OLDROOMCODE", LocalDateTime.of(2026, 8, 11, 19, 29));
-        groups.saveAndFlush(group);
 
         mvc.perform(post("/roommate-groups/join").header("Authorization", token(outsider))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"inviteCode\":\"OLDROOMCODE\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("INVITE_CODE_EXPIRED"));
-        mvc.perform(post("/roommate-groups/{id}/invite-code/reissue", group.getId())
-                        .header("Authorization", token(outsider)))
-                .andExpect(status().isForbidden());
-        mvc.perform(post("/roommate-groups/{id}/invite-code/reissue", group.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inviteCode\":\"ABC123\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/roommate-groups/{id}/invite-code", group.getId())
                         .header("Authorization", token(member)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").isString())
-                .andExpect(jsonPath("$.data.expiresAt").isString());
-
-        assertThat(groups.findById(group.getId()).orElseThrow().getInviteCode()).isNotEqualTo("OLDROOMCODE");
+                .andExpect(jsonPath("$.data.inviteCode").value("ABC123"))
+                .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
+        assertThat(groups.findById(group.getId()).orElseThrow().getInviteCode()).isEqualTo("ABC123");
     }
 
     private RoommateGroup activeGroup(User first, User second) {

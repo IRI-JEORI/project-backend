@@ -1,0 +1,71 @@
+name: MySQL Integration
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  mysql-integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: nunnun
+          MYSQL_USER: nunnun
+          MYSQL_PASSWORD: nunnun
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Apply migrations and start Spring Boot with schema validation
+        env:
+          DB_URL: jdbc:mysql://127.0.0.1:3306/nunnun?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+          DB_USERNAME: nunnun
+          DB_PASSWORD: nunnun
+          JWT_SECRET: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+        run: |
+          bash ./gradlew bootRun > boot-run.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true; cat boot-run.log' EXIT
+          for attempt in {1..60}; do
+            if grep -q 'Started NunnunApplication' boot-run.log; then
+              break
+            fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              echo 'Spring Boot exited before startup completed.' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          grep -q 'Started NunnunApplication' boot-run.log
+
+      - name: Assert Flyway history and final schema
+        env:
+          MYSQL_PWD: nunnun
+        run: |
+          history=$(mysql -h127.0.0.1 -ununnun -Nse \
+            "SELECT CONCAT(version, ':', success) FROM flyway_schema_history WHERE version IN ('1','2','3','4') ORDER BY installed_rank" nunnun)
+          test "$history" = $'1:1\n2:1\n3:1\n4:1'
+
+          mysql -h127.0.0.1 -ununnun -Nse \
+            "SELECT data_type, character_maximum_length FROM information_schema.columns WHERE table_schema='nunnun' AND table_name='wake_groups' AND column_name='invite_code'" \
+            | grep -qx $'varchar\t6'
+          mysql -h127.0.0.1 -ununnun -Nse \
+            "SELECT data_type, character_maximum_length FROM information_schema.columns WHERE table_schema='nunnun' AND table_name='roommate_groups' AND column_name='invite_code'" \
+            | grep -qx $'varchar\t6'
+          test "$(mysql -h127.0.0.1 -ununnun -Nse \
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='nunnun' AND table_name IN ('wake_groups','roommate_groups') AND column_name='invite_code_expires_at'" nunnun)" = 0

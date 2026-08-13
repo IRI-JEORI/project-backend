@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
 
 @RestController
 @RequestMapping("/roommate-groups")
@@ -74,15 +73,6 @@ public class RoommateGroupController {
         return ResponseEntity.ok(ApiResponse.success(
                 roommateGroupService.invite(user.userId(), id)
         ));
-    }
-
-    @PostMapping("/{id}/invite-code/reissue")
-    @Operation(summary = "룸메이트 그룹 초대 코드 재발급", description = "그룹 멤버가 24시간 유효한 새 초대 코드를 발급합니다. 기존 코드는 즉시 무효화됩니다.")
-    public ResponseEntity<ApiResponse<RoommateInviteCodeResponse>> reissueInviteCode(
-            @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable Long id
-    ) {
-        return ResponseEntity.ok(ApiResponse.success(roommateGroupService.reissueInviteCode(user.userId(), id)));
     }
 
     @GetMapping("/{id}/sleep-manual")

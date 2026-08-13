@@ -120,12 +120,12 @@ class WakeGroupControllerTest {
     void joinsGroupAndRejectsDuplicateOrUnknownInviteCode() throws Exception {
         User creator = saveUser("creator@example.com");
         User joiner = saveUser("joiner@example.com");
-        WakeGroup group = createGroup(creator, "JOINCODE0001");
+        WakeGroup group = createGroup(creator, "JOIN01");
 
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"JOINCODE0001\"}"))
+                        .content("{\"inviteCode\":\"JOIN01\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.id").value(group.getId()));
 
@@ -137,7 +137,7 @@ class WakeGroupControllerTest {
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"JOINCODE0001\"}"))
+                        .content("{\"inviteCode\":\"JOIN01\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ALREADY_JOINED"));
         mockMvc.perform(post("/wake-groups/join")
@@ -151,7 +151,7 @@ class WakeGroupControllerTest {
     @Test
     void assignsLowestUnusedSlotAndEnforcesTwelveMemberLimit() throws Exception {
         User creator = saveUser("creator@example.com");
-        WakeGroup group = createGroup(creator, "SLOTCODE0001");
+        WakeGroup group = createGroup(creator, "SLOT01");
         User slotTwo = saveUser("slot-two@example.com");
         User slotFour = saveUser("slot-four@example.com");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, slotTwo, (short) 2));
@@ -180,12 +180,12 @@ class WakeGroupControllerTest {
     void returnsInviteCodeOnlyToMembersAndHandlesUnknownGroup() throws Exception {
         User creator = saveUser("creator@example.com");
         User outsider = saveUser("outsider@example.com");
-        WakeGroup group = createGroup(creator, "INVITECODE01");
+        WakeGroup group = createGroup(creator, "INV001");
 
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").value("INVITECODE01"))
+                .andExpect(jsonPath("$.data.inviteCode").value("INV001"))
                 .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(outsider)))
@@ -202,7 +202,7 @@ class WakeGroupControllerTest {
         User creator = saveUser("creator@example.com");
         User leavingUser = saveUser("leaving@example.com");
         User remainingUser = saveUser("remaining@example.com");
-        WakeGroup group = createGroup(creator, "LEAVECODE001");
+        WakeGroup group = createGroup(creator, "LEAV01");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, leavingUser, (short) 2));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, remainingUser, (short) 3));
 
@@ -262,8 +262,8 @@ class WakeGroupControllerTest {
     void lastMemberLeaveDeletesOnlyGroupWakeHistoryAndProofObject() throws Exception {
         User member = saveUser("member@example.com");
         User unrelatedUser = saveUser("unrelated@example.com");
-        WakeGroup deletedGroup = createGroup(member, "DELETECODE01");
-        WakeGroup unrelatedGroup = createGroup(unrelatedUser, "KEEPGROUP001");
+        WakeGroup deletedGroup = createGroup(member, "DEL001");
+        WakeGroup unrelatedGroup = createGroup(unrelatedUser, "KEEP01");
         WakeRequest deletedRequest = wakeRequestRepository.saveAndFlush(WakeRequest.send(
                 deletedGroup, member, member, LocalDateTime.now(ZoneOffset.UTC)
         ));
@@ -295,7 +295,7 @@ class WakeGroupControllerTest {
     @Test
     void storageFailureAfterCommitDoesNotRollbackLastMemberCleanup() throws Exception {
         User member = saveUser("storage-failure@example.com");
-        WakeGroup group = createGroup(member, "S3FAILCODE01");
+        WakeGroup group = createGroup(member, "S3F001");
         WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(
                 group, member, member, LocalDateTime.now(ZoneOffset.UTC)
         ));
