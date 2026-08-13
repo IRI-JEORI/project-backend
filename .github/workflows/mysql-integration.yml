@@ -36,7 +36,7 @@ jobs:
           DB_URL: jdbc:mysql://127.0.0.1:3306/nunnun?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
           DB_USERNAME: nunnun
           DB_PASSWORD: nunnun
-          JWT_SECRET: mysql-integration-test-secret-key-must-be-at-least-32-bytes
+          JWT_SECRET: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
         run: |
           bash ./gradlew bootRun > boot-run.log 2>&1 &
           app_pid=$!
