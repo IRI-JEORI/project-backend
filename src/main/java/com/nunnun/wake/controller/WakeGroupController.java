@@ -58,7 +58,7 @@ public class WakeGroupController {
     }
 
     @PostMapping("/{id}/invite-code/reissue")
-    @Operation(summary = "깨우기 그룹 초대 코드 재발급", description = "그룹 멤버가 24시간 유효한 새 초대 코드를 발급합니다. 기존 코드는 즉시 무효화됩니다.")
+    @Operation(summary = "깨우기 그룹 초대 코드 재발급", description = "그룹 생성자만 새 초대 코드를 발급할 수 있습니다. 기존 코드는 즉시 무효화됩니다.")
     public ResponseEntity<ApiResponse<InviteCodeResponse>> reissueInviteCode(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable Long id
