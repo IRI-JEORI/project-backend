@@ -264,7 +264,7 @@ class WakeRequestControllerTest {
         User first = saveUser("five-first@example.com");
         User second = saveUser("five-second@example.com");
         User receiver = saveUser("five-receiver@example.com");
-        WakeGroup group = wakeGroupRepository.saveAndFlush(WakeGroup.create("Wake", "FIVECODE", first));
+        WakeGroup group = wakeGroupRepository.saveAndFlush(WakeGroup.create("Wake", "FIVE01", first));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, first, (short) 1));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, second, (short) 2));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, receiver, (short) 3));
@@ -276,7 +276,7 @@ class WakeRequestControllerTest {
         first = saveUser("boundary-first@example.com");
         second = saveUser("boundary-second@example.com");
         receiver = saveUser("boundary-receiver@example.com");
-        group = wakeGroupRepository.saveAndFlush(WakeGroup.create("Wake", "BOUNDARYCODE", first));
+        group = wakeGroupRepository.saveAndFlush(WakeGroup.create("Wake", "BOUND1", first));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, first, (short) 1));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, second, (short) 2));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, receiver, (short) 3));

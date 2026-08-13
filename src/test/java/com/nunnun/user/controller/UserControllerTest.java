@@ -193,10 +193,10 @@ class UserControllerTest {
         sleepSessions.save(SleepSession.create(user, LocalDate.now(), LocalDateTime.now()));
         sleepFeedbacks.save(SleepFeedback.create(user, LocalDate.now(), SleepScore.GOOD));
 
-        WakeGroup wakeGroup = wakeGroups.save(WakeGroup.create("wake", "WAKECODE", other));
+        WakeGroup wakeGroup = wakeGroups.save(WakeGroup.create("wake", "WAKE01", other));
         wakeMembers.save(WakeGroupMember.join(wakeGroup, user, (short) 1));
         WakeRequest wakeRequest = wakeRequests.save(WakeRequest.send(wakeGroup, other, user, LocalDateTime.now()));
-        RoommateGroup roommateGroup = roommateGroups.save(RoommateGroup.create("room", "ROOMCODE", other));
+        RoommateGroup roommateGroup = roommateGroups.save(RoommateGroup.create("room", "ROOM01", other));
         roommateMembers.save(RoommateGroupMember.join(roommateGroup, user, (short) 1));
         roommateMembers.save(RoommateGroupMember.join(roommateGroup, other, (short) 2));
         roommateGroup.activate();

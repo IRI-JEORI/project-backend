@@ -83,6 +83,7 @@ class RoommateGroupControllerTest {
                 .andExpect(jsonPath("$.data.status").value("WAITING"));
 
         RoommateGroup group = groups.findAll().getFirst();
+        assertThat(group.getInviteCode()).hasSize(6).matches("[A-Z0-9]+");
         assertThat(members.findAllByRoommateGroupId(group.getId())).singleElement()
                 .extracting(RoommateGroupMember::getSlotNo).isEqualTo((short) 1);
 
@@ -188,28 +189,16 @@ class RoommateGroupControllerTest {
     }
 
     @Test
-    void expiresAndReissuesInviteCodeForMembersOnly() throws Exception {
+    void returnsInviteCodeWithoutExpiration() throws Exception {
         User member = user("Member", "member@x.com");
-        User outsider = user("Outsider", "outsider@x.com");
-        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Room", "OLDROOMCODE", member));
+        RoommateGroup group = groups.saveAndFlush(RoommateGroup.create("Room", "ROOM01", member));
         members.saveAndFlush(RoommateGroupMember.join(group, member, (short) 1));
-        group.reissueInviteCode("OLDROOMCODE", LocalDateTime.of(2026, 8, 11, 19, 29));
-        groups.saveAndFlush(group);
 
-        mvc.perform(post("/roommate-groups/join").header("Authorization", token(outsider))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"inviteCode\":\"OLDROOMCODE\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("INVITE_CODE_EXPIRED"));
-        mvc.perform(post("/roommate-groups/{id}/invite-code/reissue", group.getId())
-                        .header("Authorization", token(outsider)))
-                .andExpect(status().isForbidden());
-        mvc.perform(post("/roommate-groups/{id}/invite-code/reissue", group.getId())
+        mvc.perform(get("/roommate-groups/{id}/invite-code", group.getId())
                         .header("Authorization", token(member)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").isString())
-                .andExpect(jsonPath("$.data.expiresAt").isString());
-
-        assertThat(groups.findById(group.getId()).orElseThrow().getInviteCode()).isNotEqualTo("OLDROOMCODE");
+                .andExpect(jsonPath("$.data.inviteCode").value("ROOM01"))
+                .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
     }
 
     private RoommateGroup activeGroup(User first, User second) {

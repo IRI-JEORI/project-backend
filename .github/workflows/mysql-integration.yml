@@ -1,0 +1,198 @@
+name: MySQL 8.4 Integration
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  mysql-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: nunnun
+          MYSQL_USER: nunnun
+          MYSQL_PASSWORD: nunnun
+          MYSQL_ROOT_PASSWORD: root-nunnun
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=root-nunnun --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=20s
+
+    env:
+      DB_URL: jdbc:mysql://127.0.0.1:3306/nunnun?serverTimezone=UTC&characterEncoding=UTF-8
+      DB_USERNAME: nunnun
+      DB_PASSWORD: nunnun
+      JWT_SECRET: mysql-integration-only-jwt-secret-that-is-at-least-thirty-two-bytes-long
+      AWS_S3_ENABLED: "false"
+      FIREBASE_ENABLED: "false"
+      OPENAI_API_KEY: ""
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install MySQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mysql-client
+
+      - name: Verify MySQL service startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            if mysqladmin ping \
+              --host=127.0.0.1 \
+              --port=3306 \
+              --user="$DB_USERNAME" \
+              --password="$DB_PASSWORD" \
+              --silent; then
+              mysql --host=127.0.0.1 --port=3306 \
+                --user="$DB_USERNAME" --password="$DB_PASSWORD" \
+                --execute="SELECT VERSION() AS mysql_version, DATABASE() AS current_database" nunnun
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::MySQL service did not become ready within 60 seconds."
+          exit 1
+
+      - name: Verify production schema settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^      ddl-auto: validate$' src/main/resources/application.yml
+          grep -A2 -Eq '^  flyway:$' src/main/resources/application.yml
+          grep -Eq '^    enabled: true$' src/main/resources/application.yml
+
+      - name: Start Spring Boot with Flyway and Hibernate validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > app.log
+          nohup bash ./gradlew bootRun --no-daemon >app.log 2>&1 &
+          echo $! > app.pid
+
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:8080/v3/api-docs >/dev/null; then
+              echo "Spring Boot startup succeeded against MySQL."
+              exit 0
+            fi
+            if ! kill -0 "$(cat app.pid)" 2>/dev/null; then
+              echo "::group::Spring Boot application log"
+              cat app.log
+              echo "::endgroup::"
+              if grep -qiE 'flyway|migration|schema history' app.log; then
+                echo "::error::Spring Boot exited during Flyway migration or schema initialization."
+              elif grep -qiE 'schema-validation|schema validation|validate.*schema' app.log; then
+                echo "::error::Spring Boot exited during Hibernate ddl-auto=validate."
+              else
+                echo "::error::Spring Boot exited before startup completed."
+              fi
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "::group::Spring Boot application log"
+          cat app.log
+          echo "::endgroup::"
+          echo "::error::Spring Boot did not respond on /v3/api-docs within 120 seconds."
+          exit 1
+
+      - name: Verify Flyway V1, V2, and V3 success
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_base=(mysql --batch --skip-column-names --host=127.0.0.1 --port=3306
+            --user="$DB_USERNAME" --password="$DB_PASSWORD" nunnun)
+
+          "${mysql_base[@]}" --execute="SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
+          for version in 1 2 3; do
+            count=$("${mysql_base[@]}" --execute="SELECT COUNT(*) FROM flyway_schema_history WHERE version = '${version}' AND success = 1;")
+            if [[ "$count" != "1" ]]; then
+              echo "::error::Flyway V${version} does not have exactly one successful history entry."
+              exit 1
+            fi
+          done
+
+      - name: Verify V3 final MySQL schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_base=(mysql --batch --skip-column-names --host=127.0.0.1 --port=3306
+            --user="$DB_USERNAME" --password="$DB_PASSWORD" nunnun)
+
+          assert_invite_schema() {
+            local table=$1
+            local definition
+            local expiration_count
+
+            definition=$("${mysql_base[@]}" --execute="
+              SELECT CONCAT(DATA_TYPE, ':', CHARACTER_MAXIMUM_LENGTH, ':', IS_NULLABLE)
+              FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = 'nunnun'
+                AND TABLE_NAME = '${table}'
+                AND COLUMN_NAME = 'invite_code';")
+            if [[ "$definition" != "varchar:6:YES" ]]; then
+              echo "::error::${table}.invite_code expected varchar:6:YES, got '${definition}'."
+              exit 1
+            fi
+
+            expiration_count=$("${mysql_base[@]}" --execute="
+              SELECT COUNT(*)
+              FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = 'nunnun'
+                AND TABLE_NAME = '${table}'
+                AND COLUMN_NAME = 'invite_code_expires_at';")
+            if [[ "$expiration_count" != "0" ]]; then
+              echo "::error::${table}.invite_code_expires_at still exists."
+              exit 1
+            fi
+          }
+
+          assert_invite_schema wake_groups
+          assert_invite_schema roommate_groups
+
+      - name: Run H2 test suite
+        run: bash ./gradlew test --no-daemon
+
+      - name: Run Gradle build
+        run: bash ./gradlew build --no-daemon
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Print application log on failure
+        if: failure()
+        run: |
+          if [[ -f app.log ]]; then
+            echo "::group::Spring Boot application log"
+            cat app.log
+            echo "::endgroup::"
+          fi
+
+      - name: Stop Spring Boot
+        if: always()
+        run: |
+          if [[ -f app.pid ]] && kill -0 "$(cat app.pid)" 2>/dev/null; then
+            kill "$(cat app.pid)"
+            timeout 15s tail --pid="$(cat app.pid)" -f /dev/null || true
+          fi

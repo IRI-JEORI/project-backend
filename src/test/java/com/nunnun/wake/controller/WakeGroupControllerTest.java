@@ -19,8 +19,6 @@ import com.nunnun.wake.entity.WakeGroupMember;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import java.util.List;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -74,7 +72,7 @@ class WakeGroupControllerTest {
         WakeGroup group = wakeGroupRepository.findAll().getFirst();
         WakeGroupMember member = wakeGroupMemberRepository.findAll().getFirst();
         assertThat(group.getCreator().getId()).isEqualTo(creator.getId());
-        assertThat(group.getInviteCode()).hasSize(12).matches("[A-Z0-9]+");
+        assertThat(group.getInviteCode()).hasSize(6).matches("[A-Z0-9]+");
         assertThat(member.getUser().getId()).isEqualTo(creator.getId());
         assertThat(member.getSlotNo()).isEqualTo((short) 1);
     }
@@ -104,12 +102,12 @@ class WakeGroupControllerTest {
     void joinsGroupAndRejectsDuplicateOrUnknownInviteCode() throws Exception {
         User creator = saveUser("creator@example.com");
         User joiner = saveUser("joiner@example.com");
-        WakeGroup group = createGroup(creator, "JOINCODE0001");
+        WakeGroup group = createGroup(creator, "JOIN01");
 
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"JOINCODE0001\"}"))
+                        .content("{\"inviteCode\":\"JOIN01\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.id").value(group.getId()));
 
@@ -121,7 +119,7 @@ class WakeGroupControllerTest {
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"JOINCODE0001\"}"))
+                        .content("{\"inviteCode\":\"JOIN01\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ALREADY_JOINED"));
         mockMvc.perform(post("/wake-groups/join")
@@ -135,7 +133,7 @@ class WakeGroupControllerTest {
     @Test
     void assignsLowestUnusedSlotAndEnforcesTwelveMemberLimit() throws Exception {
         User creator = saveUser("creator@example.com");
-        WakeGroup group = createGroup(creator, "SLOTCODE0001");
+        WakeGroup group = createGroup(creator, "SLOT01");
         User slotTwo = saveUser("slot-two@example.com");
         User slotFour = saveUser("slot-four@example.com");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, slotTwo, (short) 2));
@@ -164,12 +162,13 @@ class WakeGroupControllerTest {
     void returnsInviteCodeOnlyToMembersAndHandlesUnknownGroup() throws Exception {
         User creator = saveUser("creator@example.com");
         User outsider = saveUser("outsider@example.com");
-        WakeGroup group = createGroup(creator, "INVITECODE01");
+        WakeGroup group = createGroup(creator, "INV001");
 
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").value("INVITECODE01"));
+                .andExpect(jsonPath("$.data.inviteCode").value("INV001"))
+                .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(outsider)))
                 .andExpect(status().isForbidden())
@@ -185,7 +184,7 @@ class WakeGroupControllerTest {
         User creator = saveUser("creator@example.com");
         User leavingUser = saveUser("leaving@example.com");
         User remainingUser = saveUser("remaining@example.com");
-        WakeGroup group = createGroup(creator, "LEAVECODE001");
+        WakeGroup group = createGroup(creator, "LEAVE1");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, leavingUser, (short) 2));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, remainingUser, (short) 3));
 
@@ -215,27 +214,23 @@ class WakeGroupControllerTest {
     }
 
     @Test
-    void expiresAndReissuesInviteCodeAndInvalidatesItWhenLastMemberLeaves() throws Exception {
+    void keepsInviteCodeValidWithoutExpiration() throws Exception {
         User creator = saveUser("creator@example.com");
         User joiner = saveUser("joiner@example.com");
-        WakeGroup group = createGroup(creator, "OLDCODE00001");
-        group.reissueInviteCode("OLDCODE00001", LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
-        wakeGroupRepository.saveAndFlush(group);
+        WakeGroup group = createGroup(creator, "OLDCOD");
 
-        join(joiner, "OLDCODE00001")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("INVITE_CODE_EXPIRED"));
+        join(joiner, "OLDCOD").andExpect(status().isCreated());
+    }
 
-        mvcResult(post("/wake-groups/{id}/invite-code/reissue", group.getId()), creator)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").isString())
-                .andExpect(jsonPath("$.data.expiresAt").isString());
-        WakeGroup reissued = wakeGroupRepository.findById(group.getId()).orElseThrow();
-        assertThat(reissued.getInviteCode()).isNotEqualTo("OLDCODE00001");
-        join(joiner, reissued.getInviteCode()).andExpect(status().isCreated());
+    @Test
+    void invalidatesInviteCodeWhenLastMemberLeaves() throws Exception {
+        User creator = saveUser("creator@example.com");
+        User member = saveUser("member@example.com");
+        WakeGroup group = createGroup(creator, "LEAVE2");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 2));
 
         mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
-                        .header("Authorization", bearerTokenFor(joiner)))
+                        .header("Authorization", bearerTokenFor(member)))
                 .andExpect(status().isOk());
         mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
                         .header("Authorization", bearerTokenFor(creator)))
@@ -244,13 +239,6 @@ class WakeGroupControllerTest {
         WakeGroup empty = wakeGroupRepository.findById(group.getId()).orElseThrow();
         assertThat(wakeGroupMemberRepository.findAllByWakeGroupId(group.getId())).isEmpty();
         assertThat(empty.getInviteCode()).isNull();
-        assertThat(empty.getInviteCodeExpiresAt()).isNull();
-    }
-
-    private org.springframework.test.web.servlet.ResultActions mvcResult(
-            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, User user
-    ) throws Exception {
-        return mockMvc.perform(request.header("Authorization", bearerTokenFor(user)));
     }
 
     private void clearData() {

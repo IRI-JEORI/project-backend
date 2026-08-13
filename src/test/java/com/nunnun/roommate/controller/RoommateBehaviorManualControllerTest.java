@@ -99,7 +99,7 @@ class RoommateBehaviorManualControllerTest {
     void selectsManualByBothGroupAndAuthenticatedTargetUser() throws Exception {
         User a = user("a@example.com");
         User b = user("b@example.com");
-        RoommateGroup requestedGroup = activeGroup(a, b, "REQUESTED");
+        RoommateGroup requestedGroup = activeGroup(a, b, "REQ001");
         User otherCreator = user("other@example.com");
         RoommateGroup otherGroup = groups.saveAndFlush(RoommateGroup.create("Other", "OTHER", otherCreator));
         LocalDateTime now = LocalDateTime.of(2026, 8, 12, 3, 0);

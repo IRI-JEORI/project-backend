@@ -23,7 +23,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +63,7 @@ public class RoommateGroupService {
     public RoommateGroup create(Long userId, String name) {
         User user = user(userId);
         ensureFree(userId);
-        RoommateGroup group = groups.save(RoommateGroup.create(name, code(), nowUtc().plusHours(24), user));
+        RoommateGroup group = groups.save(RoommateGroup.create(name, code(), user));
         members.save(RoommateGroupMember.join(group, user, (short) 1));
         return group;
     }
@@ -73,9 +72,6 @@ public class RoommateGroupService {
     public RoommateGroup join(Long userId, String inviteCode) {
         RoommateGroup group = groups.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
-        if (group.isInviteCodeExpiredAt(nowUtc())) {
-            throw new BusinessException(ErrorCode.INVITE_CODE_EXPIRED);
-        }
         User user = user(userId);
         ensureFree(userId);
         if (group.getStatus() != RoommateGroupStatus.WAITING || members.countByRoommateGroupId(group.getId()) != 1) {
@@ -145,24 +141,7 @@ public class RoommateGroupService {
         }
         RoommateGroup group = groups.findById(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
-        return new com.nunnun.roommate.dto.RoommateInviteCodeResponse(
-                group.getInviteCode(), group.getInviteCodeExpiresAt() == null
-                        ? null : group.getInviteCodeExpiresAt().toInstant(ZoneOffset.UTC)
-        );
-    }
-
-    @Transactional
-    public com.nunnun.roommate.dto.RoommateInviteCodeResponse reissueInviteCode(Long userId, Long groupId) {
-        user(userId);
-        RoommateGroup group = groups.findByIdForUpdate(groupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ROOMMATE_GROUP_NOT_FOUND));
-        if (!members.existsByRoommateGroupIdAndUserId(groupId, userId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-        group.reissueInviteCode(code(), nowUtc().plusHours(24));
-        return new com.nunnun.roommate.dto.RoommateInviteCodeResponse(
-                group.getInviteCode(), group.getInviteCodeExpiresAt().toInstant(ZoneOffset.UTC)
-        );
+        return new com.nunnun.roommate.dto.RoommateInviteCodeResponse(group.getInviteCode());
     }
 
     private User user(Long id) {
@@ -207,7 +186,4 @@ public class RoommateGroupService {
                 ));
     }
 
-    private LocalDateTime nowUtc() {
-        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-    }
 }
