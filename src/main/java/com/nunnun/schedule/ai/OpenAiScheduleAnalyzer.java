@@ -45,7 +45,10 @@ public class OpenAiScheduleAnalyzer implements ScheduleAnalyzer {
                     .instructions(ANALYSIS_INSTRUCTIONS)
                     .inputOfResponse(List.of(ResponseInputItem.ofMessage(ResponseInputItem.Message.builder()
                             .role(ResponseInputItem.Message.Role.USER)
-                            .addContent(ResponseInputImage.builder().imageUrl(imageDataUrl).build())
+                            .addContent(ResponseInputImage.builder()
+                                    .detail(ResponseInputImage.Detail.AUTO)
+                                    .imageUrl(imageDataUrl)
+                                    .build())
                             .build())))
                     .text(ScheduleAnalysisOutput.class)
                     .build();
