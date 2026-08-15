@@ -37,7 +37,17 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/auth/signup", "/auth/login", "/auth/reissue", "/auth/logout", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                        .requestMatchers(
+                                "/auth/signup",
+                                "/auth/login",
+                                "/auth/demo-login",
+                                "/auth/reissue",
+                                "/auth/logout",
+                                "/demo-accounts",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        )
                         .permitAll()
                         .anyRequest().authenticated()
                 )

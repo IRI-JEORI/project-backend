@@ -1,5 +1,9 @@
 package com.nunnun.auth.service;
 
+import com.nunnun.auth.dto.DemoAccountResponse;
+import com.nunnun.auth.dto.DemoAccountsResponse;
+import com.nunnun.auth.dto.DemoLoginRequest;
+import com.nunnun.auth.dto.DemoLoginResponse;
 import com.nunnun.auth.dto.LoginRequest;
 import com.nunnun.auth.dto.LoginResponse;
 import com.nunnun.auth.dto.LogoutRequest;
@@ -19,6 +23,7 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,15 +78,32 @@ public class AuthService {
         User user = userWriteGuard.lockIfActive(foundUser.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
-        GeneratedJwt accessToken = jwtTokenProvider.createAccessToken(user.getId());
-        GeneratedJwt refreshToken = jwtTokenProvider.createRefreshToken(user.getId());
-        refreshTokenRepository.save(RefreshToken.create(
-                user,
-                refreshTokenHashGenerator.hash(refreshToken.token()),
-                LocalDateTime.ofInstant(refreshToken.expiresAt(), ZoneOffset.UTC)
-        ));
+        return issueTokens(user);
+    }
 
-        return new LoginResponse(accessToken.token(), refreshToken.token());
+    @Transactional(readOnly = true)
+    public DemoAccountsResponse getDemoAccounts() {
+        List<DemoAccountResponse> accounts = userRepository
+                .findAllByDemoTrueAndDeletedAtIsNullOrderByIdAsc()
+                .stream()
+                .map(DemoAccountResponse::from)
+                .toList();
+        return new DemoAccountsResponse(accounts);
+    }
+
+    @Transactional
+    public DemoLoginResponse demoLogin(DemoLoginRequest request) {
+        User candidate = userRepository.findByIdAndDemoTrueAndDeletedAtIsNull(request.demoAccountId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.DEMO_ACCOUNT_NOT_FOUND));
+        User user = userWriteGuard.lockIfActive(candidate.getId())
+                .filter(User::isDemo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DEMO_ACCOUNT_NOT_FOUND));
+        LoginResponse tokens = issueTokens(user);
+        return new DemoLoginResponse(
+                tokens.accessToken(),
+                tokens.refreshToken(),
+                DemoAccountResponse.from(user)
+        );
     }
 
     @Transactional
@@ -99,15 +121,7 @@ public class AuthService {
         validateRefreshToken(existingToken, userId, now, true);
         existingToken.revoke(now);
 
-        GeneratedJwt accessToken = jwtTokenProvider.createAccessToken(userId);
-        GeneratedJwt refreshToken = jwtTokenProvider.createRefreshToken(userId);
-        refreshTokenRepository.save(RefreshToken.create(
-                existingToken.getUser(),
-                refreshTokenHashGenerator.hash(refreshToken.token()),
-                LocalDateTime.ofInstant(refreshToken.expiresAt(), ZoneOffset.UTC)
-        ));
-
-        return new LoginResponse(accessToken.token(), refreshToken.token());
+        return issueTokens(existingToken.getUser());
     }
 
     @Transactional
@@ -130,6 +144,17 @@ public class AuthService {
         } catch (JwtException | IllegalArgumentException exception) {
             throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
+    }
+
+    private LoginResponse issueTokens(User user) {
+        GeneratedJwt accessToken = jwtTokenProvider.createAccessToken(user.getId());
+        GeneratedJwt refreshToken = jwtTokenProvider.createRefreshToken(user.getId());
+        refreshTokenRepository.save(RefreshToken.create(
+                user,
+                refreshTokenHashGenerator.hash(refreshToken.token()),
+                LocalDateTime.ofInstant(refreshToken.expiresAt(), ZoneOffset.UTC)
+        ));
+        return new LoginResponse(accessToken.token(), refreshToken.token());
     }
 
     private RefreshToken findRefreshToken(String rawRefreshToken) {

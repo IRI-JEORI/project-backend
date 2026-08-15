@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found."),
+    DEMO_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "DEMO_ACCOUNT_NOT_FOUND", "Demo account not found."),
     FIXED_SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "FIXED_SCHEDULE_NOT_FOUND", "Fixed schedule not found."),
     INVALID_FIXED_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_FIXED_SCHEDULE_TIME", "Start time must be before end time."),
     SLEEP_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "SLEEP_FEEDBACK_ALREADY_EXISTS", "Sleep feedback already exists for today."),

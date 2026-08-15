@@ -38,14 +38,20 @@ public class User {
     protected User() {
     }
 
-    private User(String nickname, String email, String passwordHash) {
+    private User(String nickname, String email, String passwordHash, String avatarUrl, boolean demo) {
         this.nickname = Objects.requireNonNull(nickname);
         this.email = Objects.requireNonNull(email);
         this.passwordHash = Objects.requireNonNull(passwordHash);
+        this.avatarUrl = avatarUrl;
+        this.demo = demo;
     }
 
     public static User create(String nickname, String email, String passwordHash) {
-        return new User(nickname, email, passwordHash);
+        return new User(nickname, email, passwordHash, null, false);
+    }
+
+    public static User createDemo(String nickname, String email, String passwordHash, String avatarUrl) {
+        return new User(nickname, email, passwordHash, avatarUrl, true);
     }
 
     public void changeNickname(String nickname) {
