@@ -66,11 +66,6 @@ public class WakeRequestService {
             throw new BusinessException(ErrorCode.WAKE_GROUP_RECEIVER_NOT_MEMBER);
         }
         LocalDateTime now = LocalDateTime.now(clock);
-        if (wakeRequestRepository.existsByWakeGroupIdAndReceiverIdAndRequestedAtGreaterThan(
-                groupId, receiverId, now.minusMinutes(5)
-        )) {
-            throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
-        }
         if (wakeRequestRepository.existsRecentVerifiedProofByReceiverId(receiverId, now.minusMinutes(30))) {
             throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
         }

@@ -21,7 +21,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(name = "wake_requests")
-@Check(constraints = "attempt_count BETWEEN 0 AND 2 AND status IN ('SENT', 'SNOOZED', 'VERIFIED', 'EXPIRED', 'NEEDS_HELP')")
+@Check(constraints = "attempt_count BETWEEN 0 AND 2 AND status IN ('SENT', 'VERIFIED', 'NEEDS_HELP')")
 @EntityListeners(AuditingEntityListener.class)
 public class WakeRequest {
 
@@ -77,10 +77,6 @@ public class WakeRequest {
 
     public void verify() {
         this.status = WakeRequestStatus.VERIFIED;
-    }
-
-    public void expire() {
-        this.status = WakeRequestStatus.EXPIRED;
     }
 
     public Long getId() { return id; }

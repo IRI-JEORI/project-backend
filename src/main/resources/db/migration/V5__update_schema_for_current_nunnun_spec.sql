@@ -109,7 +109,7 @@ ALTER TABLE wake_requests
     ADD COLUMN attempt_count SMALLINT NOT NULL DEFAULT 0 AFTER status,
     ADD CONSTRAINT ck_wake_requests_attempt_count CHECK (attempt_count BETWEEN 0 AND 2),
     ADD CONSTRAINT ck_wake_requests_status CHECK (
-        status IN ('SENT', 'SNOOZED', 'VERIFIED', 'EXPIRED', 'NEEDS_HELP')
+        status IN ('SENT', 'VERIFIED', 'NEEDS_HELP')
     );
 
 ALTER TABLE wake_proofs
