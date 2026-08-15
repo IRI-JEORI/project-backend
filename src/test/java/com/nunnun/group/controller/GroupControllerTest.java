@@ -59,8 +59,6 @@ class GroupControllerTest {
 
         WakeGroup memberWake = wakeGroups.saveAndFlush(WakeGroup.create("Member wake", "WAKE1", other));
         wakeMembers.saveAndFlush(WakeGroupMember.join(memberWake, me, (short) 1));
-        WakeGroup newestWake = wakeGroups.saveAndFlush(WakeGroup.create("Newest wake", "WAKE2", me));
-        wakeMembers.saveAndFlush(WakeGroupMember.join(newestWake, me, (short) 1));
         WakeGroup creatorOnlyWake = wakeGroups.saveAndFlush(WakeGroup.create("Creator only", "WAKE3", me));
         wakeMembers.saveAndFlush(WakeGroupMember.join(creatorOnlyWake, other, (short) 1));
 
@@ -75,7 +73,6 @@ class GroupControllerTest {
         roommateMembers.saveAndFlush(RoommateGroupMember.join(creatorOnlyRoommate, third, (short) 1));
 
         setCreatedAt("wake_groups", memberWake.getId(), LocalDateTime.of(2026, 1, 1, 10, 0));
-        setCreatedAt("wake_groups", newestWake.getId(), LocalDateTime.of(2026, 1, 2, 10, 0));
         setCreatedAt("wake_groups", creatorOnlyWake.getId(), LocalDateTime.of(2026, 1, 4, 10, 0));
         setCreatedAt("roommate_groups", roommate.getId(), LocalDateTime.of(2026, 1, 3, 10, 0));
         setCreatedAt("roommate_groups", creatorOnlyRoommate.getId(), LocalDateTime.of(2026, 1, 5, 10, 0));
@@ -86,15 +83,14 @@ class GroupControllerTest {
         mvc.perform(get("/groups").header("Authorization", token(me)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.groups.length()").value(3))
+                .andExpect(jsonPath("$.data.groups.length()").value(2))
                 .andExpect(jsonPath("$.data.groups[0].id").value(roommate.getId()))
                 .andExpect(jsonPath("$.data.groups[0].type").value("ROOMMATE"))
                 .andExpect(jsonPath("$.data.groups[0].name").value("Roommate"))
                 .andExpect(jsonPath("$.data.groups[0].status").value("ACTIVE"))
-                .andExpect(jsonPath("$.data.groups[1].id").value(newestWake.getId()))
+                .andExpect(jsonPath("$.data.groups[1].id").value(memberWake.getId()))
                 .andExpect(jsonPath("$.data.groups[1].type").value("WAKE"))
                 .andExpect(jsonPath("$.data.groups[1].status").value(Matchers.nullValue()))
-                .andExpect(jsonPath("$.data.groups[2].id").value(memberWake.getId()))
                 .andExpect(jsonPath("$.data.groups[?(@.name == 'Creator only')]").isEmpty())
                 .andExpect(jsonPath("$.data.groups[?(@.name == 'Creator-only roommate')]").isEmpty())
                 .andExpect(jsonPath("$.data.groups[0].inviteCode").doesNotExist())

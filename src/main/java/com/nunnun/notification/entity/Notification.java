@@ -13,13 +13,19 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
-@Table(name = "notifications")
+@Table(
+        name = "notifications",
+        uniqueConstraints = @UniqueConstraint(
+                columnNames = {"user_id", "type", "target_wake_at", "scheduled_at"}
+        )
+)
 @EntityListeners(AuditingEntityListener.class)
 public class Notification {
 
@@ -44,6 +50,9 @@ public class Notification {
     @Column(name = "reference_id")
     private Long referenceId;
 
+    @Column(name = "target_wake_at")
+    private LocalDateTime targetWakeAt;
+
     @Column(name = "scheduled_at")
     private LocalDateTime scheduledAt;
 
@@ -67,6 +76,7 @@ public class Notification {
             String title,
             String body,
             Long referenceId,
+            LocalDateTime targetWakeAt,
             LocalDateTime scheduledAt
     ) {
         this.user = Objects.requireNonNull(user);
@@ -74,6 +84,7 @@ public class Notification {
         this.title = Objects.requireNonNull(title);
         this.body = body;
         this.referenceId = referenceId;
+        this.targetWakeAt = targetWakeAt;
         this.scheduledAt = scheduledAt;
         this.status = NotificationStatus.PENDING;
     }
@@ -86,7 +97,7 @@ public class Notification {
             Long referenceId,
             LocalDateTime now
     ) {
-        return new Notification(user, type, title, body, referenceId, Objects.requireNonNull(now));
+        return new Notification(user, type, title, body, referenceId, null, Objects.requireNonNull(now));
     }
 
     public static Notification createScheduled(
@@ -97,7 +108,27 @@ public class Notification {
             Long referenceId,
             LocalDateTime scheduledAt
     ) {
-        return new Notification(user, type, title, body, referenceId, Objects.requireNonNull(scheduledAt));
+        return createScheduled(user, type, title, body, referenceId, null, scheduledAt);
+    }
+
+    public static Notification createScheduled(
+            User user,
+            NotificationType type,
+            String title,
+            String body,
+            Long referenceId,
+            LocalDateTime targetWakeAt,
+            LocalDateTime scheduledAt
+    ) {
+        return new Notification(
+                user,
+                type,
+                title,
+                body,
+                referenceId,
+                targetWakeAt,
+                Objects.requireNonNull(scheduledAt)
+        );
     }
 
     public boolean isPending() {
@@ -130,6 +161,7 @@ public class Notification {
     public String getTitle() { return title; }
     public String getBody() { return body; }
     public Long getReferenceId() { return referenceId; }
+    public LocalDateTime getTargetWakeAt() { return targetWakeAt; }
     public LocalDateTime getScheduledAt() { return scheduledAt; }
     public LocalDateTime getSentAt() { return sentAt; }
     public NotificationStatus getStatus() { return status; }

@@ -4,6 +4,8 @@ import com.nunnun.user.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,6 +38,10 @@ public class SleepSession {
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private SleepSessionSource source;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -43,14 +49,24 @@ public class SleepSession {
     protected SleepSession() {
     }
 
-    private SleepSession(User user, LocalDate sleepDate, LocalDateTime startedAt) {
+    private SleepSession(User user, LocalDate sleepDate, LocalDateTime startedAt, SleepSessionSource source) {
         this.user = Objects.requireNonNull(user);
         this.sleepDate = Objects.requireNonNull(sleepDate);
         this.startedAt = Objects.requireNonNull(startedAt);
+        this.source = Objects.requireNonNull(source);
     }
 
     public static SleepSession create(User user, LocalDate sleepDate, LocalDateTime startedAt) {
-        return new SleepSession(user, sleepDate, startedAt);
+        return new SleepSession(user, sleepDate, startedAt, SleepSessionSource.APP);
+    }
+
+    public static SleepSession create(
+            User user,
+            LocalDate sleepDate,
+            LocalDateTime startedAt,
+            SleepSessionSource source
+    ) {
+        return new SleepSession(user, sleepDate, startedAt, source);
     }
 
     public Long getId() {
@@ -67,6 +83,10 @@ public class SleepSession {
 
     public LocalDateTime getStartedAt() {
         return startedAt;
+    }
+
+    public SleepSessionSource getSource() {
+        return source;
     }
 
     public LocalDateTime getCreatedAt() {

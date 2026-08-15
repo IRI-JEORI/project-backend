@@ -20,11 +20,17 @@ public class User {
     @Column(nullable = false, length = 30)
     private String nickname;
 
+    @Column(name = "avatar_url", length = 512)
+    private String avatarUrl;
+
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
+
+    @Column(name = "is_demo", nullable = false)
+    private boolean demo;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -71,8 +77,16 @@ public class User {
         return email;
     }
 
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
     public String getPasswordHash() {
         return passwordHash;
+    }
+
+    public boolean isDemo() {
+        return demo;
     }
 
     public LocalDateTime getDeletedAt() {

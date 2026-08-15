@@ -4,5 +4,6 @@ public enum WakeRequestStatus {
     SENT,
     SNOOZED,
     VERIFIED,
-    EXPIRED
+    EXPIRED,
+    NEEDS_HELP
 }

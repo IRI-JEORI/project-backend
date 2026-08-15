@@ -13,11 +13,13 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import org.hibernate.annotations.Check;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(name = "wake_groups")
+@Check(constraints = "capacity IN (4, 8)")
 @EntityListeners(AuditingEntityListener.class)
 public class WakeGroup {
 
@@ -28,11 +30,14 @@ public class WakeGroup {
     @Column(nullable = false, length = 50)
     private String name;
 
-    @Column(name = "invite_code", unique = true, length = 6)
+    @Column(nullable = false)
+    private Short capacity;
+
+    @Column(name = "invite_code", nullable = false, unique = true, length = 6)
     private String inviteCode;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "creator_id")
+    @JoinColumn(name = "creator_id", nullable = false)
     private User creator;
 
     @CreatedDate
@@ -44,6 +49,7 @@ public class WakeGroup {
 
     private WakeGroup(String name, String inviteCode, User creator) {
         this.name = Objects.requireNonNull(name);
+        this.capacity = (short) 4;
         this.inviteCode = Objects.requireNonNull(inviteCode);
         this.creator = Objects.requireNonNull(creator);
     }
@@ -62,6 +68,10 @@ public class WakeGroup {
 
     public String getInviteCode() {
         return inviteCode;
+    }
+
+    public Short getCapacity() {
+        return capacity;
     }
 
     public User getCreator() {

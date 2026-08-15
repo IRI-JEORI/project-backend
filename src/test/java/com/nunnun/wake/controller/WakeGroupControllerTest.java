@@ -1,6 +1,7 @@
 package com.nunnun.wake.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -149,7 +151,7 @@ class WakeGroupControllerTest {
     }
 
     @Test
-    void assignsLowestUnusedSlotAndEnforcesTwelveMemberLimit() throws Exception {
+    void assignsLowestUnusedSlotAndEnforcesEightSlotDatabaseLimit() throws Exception {
         User creator = saveUser("creator@example.com");
         WakeGroup group = createGroup(creator, "SLOT01");
         User slotTwo = saveUser("slot-two@example.com");
@@ -164,16 +166,15 @@ class WakeGroupControllerTest {
                 .extracting(WakeGroupMember::getSlotNo)
                 .isEqualTo((short) 3);
 
-        for (short slotNo = 5; slotNo <= 12; slotNo++) {
+        for (short slotNo = 5; slotNo <= 8; slotNo++) {
             User user = saveUser("slot-" + slotNo + "@example.com");
             wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, user, slotNo));
         }
-        User thirteenthUser = saveUser("thirteenth@example.com");
+        User ninthUser = saveUser("ninth@example.com");
 
-        join(thirteenthUser, group.getInviteCode())
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_FULL"));
-        assertThat(wakeGroupMemberRepository.findAllByWakeGroupId(group.getId())).hasSize(12);
+        assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
+                WakeGroupMember.join(group, ninthUser, (short) 9)
+        )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
