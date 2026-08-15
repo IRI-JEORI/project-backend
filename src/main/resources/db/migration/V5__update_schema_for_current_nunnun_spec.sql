@@ -34,7 +34,13 @@ ALTER TABLE users
 DELETE FROM refresh_tokens WHERE user_id IS NULL;
 
 ALTER TABLE refresh_tokens
+    DROP FOREIGN KEY fk_refresh_tokens_user;
+
+ALTER TABLE refresh_tokens
     MODIFY COLUMN user_id BIGINT NOT NULL;
+
+ALTER TABLE refresh_tokens
+    ADD CONSTRAINT fk_refresh_tokens_user FOREIGN KEY (user_id) REFERENCES users(id);
 
 CREATE TABLE weekly_wake_targets (
     id BIGINT NOT NULL AUTO_INCREMENT,
@@ -72,9 +78,17 @@ ALTER TABLE sleep_sessions
     ADD CONSTRAINT ck_sleep_sessions_source CHECK (source IN ('APP', 'NOTIFICATION'));
 
 ALTER TABLE wake_groups
+    DROP FOREIGN KEY fk_wake_groups_creator;
+
+ALTER TABLE wake_groups
+    MODIFY COLUMN creator_id BIGINT NOT NULL;
+
+ALTER TABLE wake_groups
+    ADD CONSTRAINT fk_wake_groups_creator FOREIGN KEY (creator_id) REFERENCES users(id);
+
+ALTER TABLE wake_groups
     ADD COLUMN capacity SMALLINT NOT NULL DEFAULT 4 AFTER name,
     MODIFY COLUMN invite_code VARCHAR(6) NOT NULL,
-    MODIFY COLUMN creator_id BIGINT NOT NULL,
     ADD CONSTRAINT ck_wake_groups_capacity CHECK (capacity IN (4, 8));
 
 ALTER TABLE wake_group_members
