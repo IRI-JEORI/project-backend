@@ -55,6 +55,10 @@ public class WeeklyWakeTarget extends BaseTimeEntity {
         return new WeeklyWakeTarget(user, dayOfWeek, targetWakeTime);
     }
 
+    public void changeTargetWakeTime(LocalTime targetWakeTime) {
+        this.targetWakeTime = Objects.requireNonNull(targetWakeTime);
+    }
+
     public Long getId() { return id; }
     public User getUser() { return user; }
     public DayOfWeek getDayOfWeek() { return dayOfWeek; }
