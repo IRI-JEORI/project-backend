@@ -12,6 +12,16 @@ public enum ErrorCode {
             "INVALID_WAKE_TARGET_FORMAT",
             "예시와 같은 형식으로 다시 입력해주세요. 예) 월요일, 07:30"
     ),
+    INVALID_DND_FORMAT(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_DND_FORMAT",
+            "예시와 같은 형식으로 다시 입력해주세요. 예) 월요일, 08:00~11:00"
+    ),
+    INVALID_TIME_RANGE(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_TIME_RANGE",
+            "시작 시간은 종료 시간보다 빨라야 합니다."
+    ),
     WAKE_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_TARGET_NOT_FOUND", "Wake target not found."),
     SLEEP_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "SLEEP_FEEDBACK_ALREADY_EXISTS", "Sleep feedback already exists for today."),
     WAKE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_GROUP_NOT_FOUND", "Wake group not found."),
@@ -24,6 +34,7 @@ public enum ErrorCode {
     CANNOT_WAKE_SELF(HttpStatus.BAD_REQUEST, "CANNOT_WAKE_SELF", "Cannot wake yourself."),
     WAKE_GROUP_SENDER_NOT_MEMBER(HttpStatus.FORBIDDEN, "WAKE_GROUP_SENDER_NOT_MEMBER", "Sender is not a wake group member."),
     WAKE_GROUP_RECEIVER_NOT_MEMBER(HttpStatus.BAD_REQUEST, "WAKE_GROUP_RECEIVER_NOT_MEMBER", "Receiver is not a wake group member."),
+    WAKE_BLOCKED_DND(HttpStatus.CONFLICT, "WAKE_BLOCKED_DND", "Receiver is in DND."),
     WAKE_COOLDOWN_ACTIVE(HttpStatus.CONFLICT, "WAKE_COOLDOWN_ACTIVE", "Receiver is in wake cooldown."),
     WAKE_REQUEST_ACCESS_DENIED(HttpStatus.FORBIDDEN, "WAKE_REQUEST_ACCESS_DENIED", "No access to this wake request."),
     WAKE_PROOF_ALREADY_EXISTS(HttpStatus.CONFLICT, "WAKE_PROOF_ALREADY_EXISTS", "Wake proof already exists."),
