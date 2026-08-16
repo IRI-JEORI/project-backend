@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -32,6 +33,8 @@ import com.nunnun.wake.entity.Pose;
 import com.nunnun.wake.entity.WakeProof;
 import com.nunnun.wake.entity.WakeRequest;
 import com.nunnun.wake.entity.WakeRequestStatus;
+import com.nunnun.wake.entity.PoseMatchResult;
+import com.nunnun.wake.ai.PoseComparisonClient;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.DailyPoseRepository;
@@ -91,12 +94,15 @@ class WakeRequestControllerTest {
     @Autowired private JwtTokenProvider jwtTokenProvider;
     @Autowired private PasswordEncoder passwordEncoder;
     @MockBean private WakeProofStorage wakeProofStorage;
+    @MockBean private PoseComparisonClient poseComparisonClient;
     private Pose activePose;
 
     @BeforeEach
     void setUp() {
         clock.set(NOW);
-        reset(wakeProofStorage);
+        reset(wakeProofStorage, poseComparisonClient);
+        when(wakeProofStorage.createReadUrl(anyString(), any())).thenReturn("https://signed.example/image");
+        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(82);
         clearData();
         activePose = poseRepository.saveAndFlush(
                 Pose.create("TEST_POSE", "test/pose.png", "양손으로 머리 위 하트를 만들어주세요")
@@ -257,8 +263,16 @@ class WakeRequestControllerTest {
 
         uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1}))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.verifiedAt").value("2026-08-12T23:40:00"))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-08-13T07:40:00"));
+                .andExpect(jsonPath("$.data.wake_request_id").value(request.getId()))
+                .andExpect(jsonPath("$.data.attempt_no").value(1))
+                .andExpect(jsonPath("$.data.pose_match_score").value(82))
+                .andExpect(jsonPath("$.data.pose_match_result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.request_status").value("VERIFIED"))
+                .andExpect(jsonPath("$.data.can_retry").value(false))
+                .andExpect(jsonPath("$.data.remaining_attempts").value(1))
+                .andExpect(jsonPath("$.data.verified_at").value("2026-08-12T23:40:00"))
+                .andExpect(jsonPath("$.data.cooldown_until").value("2026-08-13T00:10:00"))
+                .andExpect(jsonPath("$.data.proof_expires_at").value("2026-08-13T07:40:00"));
 
         WakeProof proof = wakeProofRepository.findAll().getFirst();
         assertThat(proof.getImageObjectKey()).startsWith("wake-proofs/" + request.getId() + "/");
@@ -284,23 +298,84 @@ class WakeRequestControllerTest {
     }
 
     @Test
-    void rejectsSecondProofAndCompensatesUploadedObjectWhenPersistenceFails() throws Exception {
+    void firstFailureCanRetryAndSecondSuccessUpdatesSameProof() throws Exception {
         User sender = saveUser("sender@example.com");
         User receiver = saveUser("receiver@example.com");
         WakeRequest request = createRequest(sender, receiver);
-        wakeProofRepository.saveAndFlush(WakeProof.verify(request, "wake-proofs/existing.jpg", NOW));
-        uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1}))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("WAKE_PROOF_ALREADY_EXISTS"));
-        verify(wakeProofStorage, org.mockito.Mockito.never()).upload(anyString(), any());
+        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(40, 82);
 
-        wakeProofRepository.deleteAllInBatch();
-        doAnswer(invocation -> {
-            wakeProofRepository.saveAndFlush(WakeProof.verify(request, "wake-proofs/race.jpg", NOW));
-            return null;
-        }).when(wakeProofStorage).upload(anyString(), any());
-        uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1})).andExpect(status().isConflict());
-        verify(wakeProofStorage).delete(anyString());
+        uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.attempt_no").value(1))
+                .andExpect(jsonPath("$.data.pose_match_result").value("FAIL"))
+                .andExpect(jsonPath("$.data.request_status").value("SENT"))
+                .andExpect(jsonPath("$.data.can_retry").value(true))
+                .andExpect(jsonPath("$.data.remaining_attempts").value(1))
+                .andExpect(jsonPath("$.data.verified_at").doesNotExist());
+        WakeProof first = wakeProofRepository.findByWakeRequestId(request.getId()).orElseThrow();
+        assertThat(first.getImageObjectKey()).isNull();
+        assertThat(first.getPoseMatchResult()).isEqualTo(PoseMatchResult.FAIL);
+        assertThat(wakeRequestRepository.existsRecentVerifiedProofByReceiverId(
+                receiver.getId(), NOW.minusMinutes(30))).isFalse();
+
+        uploadProof(receiver, request.getId(), image("retry.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.attempt_no").value(2))
+                .andExpect(jsonPath("$.data.pose_match_result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.request_status").value("VERIFIED"))
+                .andExpect(jsonPath("$.data.remaining_attempts").value(0));
+
+        assertThat(wakeProofRepository.count()).isOne();
+        WakeProof retried = wakeProofRepository.findByWakeRequestId(request.getId()).orElseThrow();
+        assertThat(retried.getId()).isEqualTo(first.getId());
+        assertThat(retried.getImageObjectKey()).isNotNull();
+        assertThat(retried.getPoseMatchScore()).isEqualTo((short) 82);
+        assertThat(wakeRequestRepository.findById(request.getId()).orElseThrow().getAttemptCount()).isEqualTo((short) 2);
+    }
+
+    @Test
+    void exactThresholdAndMaximumScoreAreSuccessful() throws Exception {
+        User firstSender = saveUser("threshold-sender@example.com");
+        User firstReceiver = saveUser("threshold-receiver@example.com");
+        WakeRequest threshold = createRequest(firstSender, firstReceiver);
+        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(70);
+        uploadProof(firstReceiver, threshold.getId(), image("threshold.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.pose_match_score").value(70))
+                .andExpect(jsonPath("$.data.pose_match_result").value("SUCCESS"));
+
+        User secondSender = saveUser("maximum-sender@example.com");
+        User secondReceiver = saveUser("maximum-receiver@example.com");
+        WakeRequest maximum = createRequest(secondSender, secondReceiver);
+        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(100);
+        uploadProof(secondReceiver, maximum.getId(), image("maximum.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.pose_match_score").value(100))
+                .andExpect(jsonPath("$.data.pose_match_result").value("SUCCESS"));
+    }
+
+    @Test
+    void secondFailureNeedsHelpAndThirdAttemptIsRejectedBeforeExternalWork() throws Exception {
+        User sender = saveUser("retry-fail-sender@example.com");
+        User receiver = saveUser("retry-fail-receiver@example.com");
+        WakeRequest request = createRequest(sender, receiver);
+        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(40, 55);
+
+        uploadProof(receiver, request.getId(), image("first.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated());
+        uploadProof(receiver, request.getId(), image("second.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.attempt_no").value(2))
+                .andExpect(jsonPath("$.data.request_status").value("NEEDS_HELP"))
+                .andExpect(jsonPath("$.data.remaining_attempts").value(0));
+
+        reset(wakeProofStorage, poseComparisonClient);
+        uploadProof(receiver, request.getId(), image("third.png", "image/png", new byte[]{1}))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVALID_WAKE_REQUEST_STATUS"));
+        verify(wakeProofStorage, org.mockito.Mockito.never()).upload(anyString(), any());
+        verify(poseComparisonClient, org.mockito.Mockito.never()).compare(anyString(), anyString(), anyString());
+        assertThat(wakeProofRepository.count()).isOne();
     }
 
     @Test
@@ -482,6 +557,8 @@ class WakeRequestControllerTest {
                 .andExpect(jsonPath("$.data.remaining_attempts").value(2));
         uploadProof(user, requestId, image("self.png", "image/png", new byte[]{1}))
                 .andExpect(status().isCreated());
+        assertThat(wakeRequestRepository.existsRecentVerifiedProofByReceiverId(
+                user.getId(), NOW.minusMinutes(30))).isTrue();
     }
 
     private void clearData() {
@@ -502,7 +579,9 @@ class WakeRequestControllerTest {
 
     private WakeRequest createRequest(User sender, User receiver) {
         WakeGroup group = createGroup(sender, receiver);
-        return wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW));
+        WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW));
+        dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
+        return request;
     }
 
     private WakeGroup createGroup(User first, User second) {

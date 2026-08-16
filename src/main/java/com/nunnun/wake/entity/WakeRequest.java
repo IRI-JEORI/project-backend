@@ -79,6 +79,19 @@ public class WakeRequest {
         this.status = WakeRequestStatus.VERIFIED;
     }
 
+    public short recordProofResult(boolean successful) {
+        if (!canBeVerified() || attemptCount >= 2) {
+            throw new IllegalStateException("Wake request does not accept another proof.");
+        }
+        attemptCount++;
+        if (successful) {
+            status = WakeRequestStatus.VERIFIED;
+        } else if (attemptCount == 2) {
+            status = WakeRequestStatus.NEEDS_HELP;
+        }
+        return attemptCount;
+    }
+
     public Long getId() { return id; }
     public WakeGroup getWakeGroup() { return wakeGroup; }
     public User getSender() { return sender; }
