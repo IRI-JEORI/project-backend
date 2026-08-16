@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 public class WeeklyWakeTargetParser {
 
     private static final Pattern INPUT_PATTERN = Pattern.compile(
-            "^(월요일|화요일|수요일|목요일|금요일|토요일|일요일), ([01][0-9]|2[0-3]):[0-5][0-9]$"
+            "^(월요일|화요일|수요일|목요일|금요일|토요일|일요일), ((?:[01][0-9]|2[0-3]):[0-5][0-9])$"
     );
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
     private static final Map<String, DayOfWeek> DAY_OF_WEEK_BY_KOREAN_NAME = Map.of(
