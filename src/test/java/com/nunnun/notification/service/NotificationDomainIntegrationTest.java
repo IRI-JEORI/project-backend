@@ -17,6 +17,7 @@ import com.nunnun.routine.entity.DailyRoutine;
 import com.nunnun.routine.repository.DailyRoutineRepository;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
+import com.nunnun.sleep.entity.SleepSessionSource;
 import com.nunnun.sleep.service.SleepService;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
@@ -273,81 +274,105 @@ class NotificationDomainIntegrationTest {
                 roommate
         );
 
-        DailyRoutine sleepRoutine =
-                routines.saveAndFlush(
-                        DailyRoutine.create(
-                                sleepingUser,
-                                TODAY
-                        )
-                );
-
-        sleepRoutine.changeTargetWakeTime(
-                LocalTime.of(7, 30)
-        );
-
-        routines.saveAndFlush(sleepRoutine);
-
-        myService.updateBedTime(
-                sleepingUser.getId(),
-                LocalTime.of(23, 30)
-        );
-
-        LocalDateTime targetWakeAt =
+        LocalDateTime currentTargetWakeAt =
                 TODAY.plusDays(1)
                         .atTime(7, 30);
 
-        List<Notification> bedtimeReminders =
-                notifications.findAll()
-                        .stream()
-                        .filter(item ->
-                                item.getType()
-                                        == NotificationType.BEDTIME_REMINDER
-                        )
-                        .toList();
+        LocalDateTime nextTargetWakeAt =
+                TODAY.plusDays(2)
+                        .atTime(7, 30);
 
-        assertThat(bedtimeReminders)
+        List<Notification> currentCycle =
+                notificationService.scheduleBedtimeReminders(
+                        sleepingUser,
+                        currentTargetWakeAt
+                );
+
+        List<Notification> nextCycle =
+                notificationService.scheduleBedtimeReminders(
+                        sleepingUser,
+                        nextTargetWakeAt
+                );
+
+        assertThat(currentCycle)
                 .hasSize(6);
 
-        assertThat(bedtimeReminders)
-                .allSatisfy(reminder -> {
-                    assertThat(
-                            reminder.getStatus()
-                    ).isEqualTo(
-                            NotificationStatus.PENDING
-                    );
+        assertThat(nextCycle)
+                .hasSize(6);
 
-                    assertThat(
-                            reminder.getTargetWakeAt()
-                    ).isEqualTo(
-                            targetWakeAt
-                    );
-                });
+        Notification sentReminder = currentCycle.getFirst();
+        sentReminder.markSent(NOW);
+        notifications.saveAndFlush(sentReminder);
 
-        Long sleepSessionId =
+        var response =
                 sleepService
                         .createSleepSession(
                                 sleepingUser.getId()
-                        )
-                        .sleepSessionId();
+                        );
+
+        Long sleepSessionId = response.sleepSessionId();
+
+        assertThat(response.bedtimeRemindersCancelled())
+                .isTrue();
+
+        assertThat(
+                sleepSessions.findById(sleepSessionId)
+                        .orElseThrow()
+                        .getSource()
+        ).isEqualTo(SleepSessionSource.APP);
 
         List<Notification> all =
                 notifications.findAll();
 
         assertThat(all)
-                .hasSize(7);
+                .hasSize(13);
 
         assertThat(all)
                 .filteredOn(item ->
                         item.getType()
                                 == NotificationType.BEDTIME_REMINDER
+                                && currentTargetWakeAt.equals(
+                                        item.getTargetWakeAt()
+                                )
+                )
+                .hasSize(6)
+                .filteredOn(Notification::isPending)
+                .isEmpty();
+
+        assertThat(
+                notifications.findById(sentReminder.getId())
+                        .orElseThrow()
+                        .getStatus()
+        ).isEqualTo(NotificationStatus.SENT);
+
+        assertThat(all)
+                .filteredOn(item ->
+                        item.getType()
+                                == NotificationType.BEDTIME_REMINDER
+                                && currentTargetWakeAt.equals(
+                                        item.getTargetWakeAt()
+                                )
+                                && !item.getId().equals(
+                                        sentReminder.getId()
+                                )
+                )
+                .allSatisfy(reminder ->
+                        assertThat(reminder.getStatus())
+                                .isEqualTo(NotificationStatus.CANCELLED)
+                );
+
+        assertThat(all)
+                .filteredOn(item ->
+                        item.getType()
+                                == NotificationType.BEDTIME_REMINDER
+                                && nextTargetWakeAt.equals(
+                                        item.getTargetWakeAt()
+                                )
                 )
                 .hasSize(6)
                 .allSatisfy(reminder ->
-                        assertThat(
-                                reminder.getStatus()
-                        ).isEqualTo(
-                                NotificationStatus.CANCELLED
-                        )
+                        assertThat(reminder.getStatus())
+                                .isEqualTo(NotificationStatus.PENDING)
                 );
 
         Notification roommateNotification =
@@ -509,19 +534,14 @@ class NotificationDomainIntegrationTest {
                         "User"
                 );
 
-        DailyRoutine wakeRoutine =
-                routines.saveAndFlush(
-                        DailyRoutine.create(
-                                user,
-                                TODAY
-                        )
-                );
+        LocalDateTime targetWakeAt =
+                TODAY.plusDays(1)
+                        .atTime(7, 30);
 
-        wakeRoutine.changeTargetWakeTime(
-                LocalTime.of(7, 30)
+        notificationService.scheduleBedtimeReminders(
+                user,
+                targetWakeAt
         );
-
-        routines.saveAndFlush(wakeRoutine);
 
         myService.updateBedTime(
                 user.getId(),
@@ -586,10 +606,6 @@ class NotificationDomainIntegrationTest {
                 .filteredOn(Notification::isPending)
                 .hasSize(5);
 
-        LocalDateTime targetWakeAt =
-                TODAY.plusDays(1)
-                        .atTime(7, 30);
-
         assertThat(reminders)
                 .allSatisfy(reminder ->
                         assertThat(
@@ -616,6 +632,15 @@ class NotificationDomainIntegrationTest {
                         TODAY.plusDays(1)
                                 .atTime(6, 0)
                 );
+
+        assertThat(
+                routines.findByUserIdAndRoutineDate(
+                                user.getId(),
+                                TODAY
+                        )
+                        .orElseThrow()
+                        .getTargetBedTime()
+        ).isEqualTo(LocalTime.of(23, 0));
     }
 
     @Test
@@ -626,33 +651,17 @@ class NotificationDomainIntegrationTest {
                         "User"
                 );
 
-        DailyRoutine tomorrow =
-                routines.saveAndFlush(
-                        DailyRoutine.create(
-                                user,
-                                TODAY.plusDays(1)
-                        )
-                );
-
-        tomorrow.changeTargetBedTime(
-                LocalTime.of(0, 30)
-        );
-
-        tomorrow.changeTargetWakeTime(
-                LocalTime.of(8, 0)
-        );
-
-        routines.saveAndFlush(tomorrow);
-
-        Notification boundaryReminder =
-                notificationService
-                        .scheduleBedtimeReminder(
-                                tomorrow
-                        );
-
         LocalDateTime tomorrowTargetWakeAt =
                 TODAY.plusDays(1)
                         .atTime(8, 0);
+
+        Notification boundaryReminder =
+                notificationService
+                        .scheduleBedtimeReminders(
+                                user,
+                                tomorrowTargetWakeAt
+                        )
+                        .getFirst();
 
         assertThat(
                 boundaryReminder.getScheduledAt()
@@ -692,32 +701,16 @@ class NotificationDomainIntegrationTest {
                                 .atTime(6, 30)
                 );
 
-        DailyRoutine today =
-                routines.saveAndFlush(
-                        DailyRoutine.create(
-                                user,
-                                TODAY
-                        )
-                );
-
-        today.changeTargetBedTime(
-                LocalTime.of(18, 0)
-        );
-
-        today.changeTargetWakeTime(
-                LocalTime.of(23, 0)
-        );
-
-        routines.saveAndFlush(today);
+        LocalDateTime todayTargetWakeAt =
+                TODAY.atTime(23, 0);
 
         Notification firstRemainingReminder =
                 notificationService
-                        .scheduleBedtimeReminder(
-                                today
-                        );
-
-        LocalDateTime todayTargetWakeAt =
-                TODAY.atTime(23, 0);
+                        .scheduleBedtimeReminders(
+                                user,
+                                todayTargetWakeAt
+                        )
+                        .getFirst();
 
         assertThat(
                 firstRemainingReminder
@@ -760,56 +753,31 @@ class NotificationDomainIntegrationTest {
     }
 
     @Test
-    void bedtimeReminderRequiresWakeTimeAndUsesOnlyLastReminderForShortWindow() {
+    void bedtimeReminderRequiresConcreteFutureTargetAndUsesOnlyLastReminderForShortWindow() {
         User user =
                 user(
                         "short@example.com",
                         "Short"
                 );
 
-        DailyRoutine withoutWake =
-                routines.saveAndFlush(
-                        DailyRoutine.create(
-                                user,
-                                TODAY
-                        )
-                );
-
-        withoutWake.changeTargetBedTime(
-                LocalTime.of(23, 0)
-        );
-
-        routines.saveAndFlush(
-                withoutWake
-        );
-
         assertThat(
                 notificationService
-                        .scheduleBedtimeReminder(
-                                withoutWake
+                        .scheduleBedtimeReminders(
+                                user,
+                                null
                         )
-        ).isNull();
+        ).isEmpty();
 
         assertThat(notifications.findAll())
                 .isEmpty();
 
-        withoutWake.changeTargetBedTime(
-                LocalTime.of(21, 45)
-        );
-
-        withoutWake.changeTargetWakeTime(
-                LocalTime.of(22, 0)
-        );
-
-        routines.saveAndFlush(
-                withoutWake
-        );
-
         Notification lastOnly =
                 notificationService
-                        .scheduleBedtimeReminder(
-                                withoutWake
-                        );
+                        .scheduleBedtimeReminders(
+                                user,
+                                TODAY.atTime(22, 0)
+                        )
+                        .getFirst();
 
         assertThat(
                 lastOnly.getScheduledAt()

@@ -106,6 +106,23 @@ class SleepControllerTest {
     }
 
     @Test
+    void storesNotificationSourceWhenSleepStartsFromReminderAction() throws Exception {
+        User user = saveUser("notification-sleep@example.com");
+
+        mockMvc.perform(post("/me/sleep")
+                        .header("Authorization", bearerTokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"source\":\"NOTIFICATION\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.started_at").value("2026-08-12T23:40:00"));
+
+        assertThat(sleepSessionRepository.findAll())
+                .singleElement()
+                .extracting(SleepSession::getSource)
+                .isEqualTo(SleepSessionSource.NOTIFICATION);
+    }
+
+    @Test
     void allowsMultipleSleepSessionsWhenNoDuplicateRuleIsSpecified() throws Exception {
         User user = saveUser("multiple-sleep@example.com");
 
