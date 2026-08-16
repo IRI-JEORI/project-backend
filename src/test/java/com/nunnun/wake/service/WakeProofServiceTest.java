@@ -5,19 +5,40 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.nunnun.global.exception.BusinessException;
+import com.nunnun.global.exception.ErrorCode;
+import com.nunnun.wake.ai.PoseComparisonClient;
+import com.nunnun.wake.dto.CreateWakeProofResponse;
+import com.nunnun.wake.entity.PoseMatchResult;
+import com.nunnun.wake.entity.WakeRequestStatus;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
 import java.util.Arrays;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
 class WakeProofServiceTest {
     private final WakeProofPersistenceService persistence = mock(WakeProofPersistenceService.class);
     private final WakeProofStorage storage = mock(WakeProofStorage.class);
-    private final WakeProofService service = new WakeProofService(persistence, storage);
+    private final PoseComparisonClient comparisonClient = mock(PoseComparisonClient.class);
+    private final WakeProofService service = new WakeProofService(persistence, storage, comparisonClient);
+
+    @BeforeEach
+    void setUp() {
+        when(persistence.prepare(any(), any()))
+                .thenReturn(new WakeProofPersistenceService.ProofPreparation("poses/reference.png", "pose"));
+        when(storage.createReadUrl(anyString(), any())).thenReturn("https://signed.example/image");
+        when(comparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(82);
+        when(persistence.applyResult(any(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(new CreateWakeProofResponse(
+                        1L, 1, 82, PoseMatchResult.SUCCESS, WakeRequestStatus.VERIFIED,
+                        false, 1, null, null, null));
+    }
 
     @Test
     void acceptsMatchingJpegPngAndWebpSignatures() {
@@ -46,13 +67,46 @@ class WakeProofServiceTest {
     }
 
     @Test
-    void compensatesDatabaseFailureAndPreservesOriginalErrorWhenDeleteAlsoFails() {
-        doThrow(new BusinessException(com.nunnun.global.exception.ErrorCode.WAKE_PROOF_ALREADY_EXISTS))
-                .when(persistence).persistVerifiedProof(any(), any(), anyString());
-        doThrow(new WakeProofStorageException("delete failed")).when(storage).delete(anyString());
+    void openAiFailureCleansUploadedObjectWithoutApplyingResult() {
+        doThrow(new RuntimeException("timeout"))
+                .when(comparisonClient).compare(anyString(), anyString(), anyString());
+
+        assertThatThrownBy(() -> service.createWakeProof(
+                1L, 1L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> org.assertj.core.api.Assertions.assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.POSE_ANALYSIS_FAILED));
+
+        verify(storage).delete(anyString());
+        verify(persistence, never()).applyResult(any(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void invalidScoresAreAnalysisFailuresAndDoNotApplyResult() {
+        when(comparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(-1, 101);
+
         assertThatThrownBy(() -> service.createWakeProof(
                 1L, 1L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF))))
                 .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.createWakeProof(
+                1L, 2L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF))))
+                .isInstanceOf(BusinessException.class);
+
+        verify(persistence, never()).applyResult(any(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
+        verify(storage, org.mockito.Mockito.times(2)).delete(anyString());
+    }
+
+    @Test
+    void preservesOriginalBusinessErrorWhenCompensationDeletionFails() {
+        doThrow(new BusinessException(ErrorCode.INVALID_WAKE_REQUEST_STATUS))
+                .when(persistence).applyResult(any(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
+        doThrow(new WakeProofStorageException("delete failed")).when(storage).delete(anyString());
+
+        assertThatThrownBy(() -> service.createWakeProof(
+                1L, 1L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> org.assertj.core.api.Assertions.assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_WAKE_REQUEST_STATUS));
         verify(storage).delete(anyString());
     }
 

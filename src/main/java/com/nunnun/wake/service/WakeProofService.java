@@ -2,12 +2,15 @@ package com.nunnun.wake.service;
 
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
+import com.nunnun.wake.ai.PoseComparisonClient;
 import com.nunnun.wake.dto.CreateWakeProofResponse;
+import com.nunnun.wake.entity.PoseMatchResult;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
+import java.io.IOException;
+import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
-import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,33 +21,57 @@ public class WakeProofService {
 
     private static final Logger log = LoggerFactory.getLogger(WakeProofService.class);
     private static final long MAX_IMAGE_BYTES = 10L * 1024L * 1024L;
-
+    private static final Duration IMAGE_URL_VALIDITY = Duration.ofMinutes(10);
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
-    private final WakeProofPersistenceService wakeProofPersistenceService;
-    private final WakeProofStorage wakeProofStorage;
+
+    private final WakeProofPersistenceService persistenceService;
+    private final WakeProofStorage storage;
+    private final PoseComparisonClient poseComparisonClient;
 
     public WakeProofService(
-            WakeProofPersistenceService wakeProofPersistenceService,
-            WakeProofStorage wakeProofStorage
+            WakeProofPersistenceService persistenceService,
+            WakeProofStorage storage,
+            PoseComparisonClient poseComparisonClient
     ) {
-        this.wakeProofPersistenceService = wakeProofPersistenceService;
-        this.wakeProofStorage = wakeProofStorage;
+        this.persistenceService = persistenceService;
+        this.storage = storage;
+        this.poseComparisonClient = poseComparisonClient;
     }
 
     public CreateWakeProofResponse createWakeProof(Long userId, Long requestId, MultipartFile image) {
         validateImage(image);
-        wakeProofPersistenceService.validateProofCreation(requestId, userId);
+        WakeProofPersistenceService.ProofPreparation preparation = persistenceService.prepare(requestId, userId);
+        String referenceUrl;
+        try {
+            referenceUrl = storage.createReadUrl(preparation.referenceImageObjectKey(), IMAGE_URL_VALIDITY);
+        } catch (WakeProofStorageException exception) {
+            throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
+        }
+
         String objectKey = createObjectKey(requestId, image.getContentType());
         try {
-            wakeProofStorage.upload(objectKey, image);
+            storage.upload(objectKey, image);
         } catch (WakeProofStorageException exception) {
             throw new BusinessException(ErrorCode.WAKE_PROOF_UPLOAD_FAILED);
         }
+
         try {
-            return wakeProofPersistenceService.persistVerifiedProof(requestId, userId, objectKey);
-        } catch (RuntimeException exception) {
+            String submittedUrl = storage.createReadUrl(objectKey, IMAGE_URL_VALIDITY);
+            int score = poseComparisonClient.compare(referenceUrl, submittedUrl, preparation.poseDescription());
+            if (score < 0 || score > 100) {
+                throw new IllegalArgumentException("Pose score is outside the supported range.");
+            }
+            CreateWakeProofResponse response = persistenceService.applyResult(requestId, userId, objectKey, score);
+            if (response.poseMatchResult() == PoseMatchResult.FAIL) {
+                safelyDeleteUploadedObject(objectKey);
+            }
+            return response;
+        } catch (BusinessException exception) {
             safelyDeleteUploadedObject(objectKey);
             throw exception;
+        } catch (RuntimeException exception) {
+            safelyDeleteUploadedObject(objectKey);
+            throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
         }
     }
 
@@ -96,9 +123,9 @@ public class WakeProofService {
 
     private void safelyDeleteUploadedObject(String objectKey) {
         try {
-            wakeProofStorage.delete(objectKey);
+            storage.delete(objectKey);
         } catch (WakeProofStorageException ignored) {
-            log.error("Wake proof compensation deletion failed; orphan sweep will retry.");
+            log.error("Wake proof image deletion failed; orphan sweep will retry.");
         }
     }
 }

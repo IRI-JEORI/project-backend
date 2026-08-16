@@ -8,17 +8,35 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 public class S3WakeProofStorage implements WakeProofStorage {
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
     private final String bucket;
 
-    public S3WakeProofStorage(S3Client s3Client, String bucket) {
+    public S3WakeProofStorage(S3Client s3Client, S3Presigner s3Presigner, String bucket) {
         this.s3Client = s3Client;
+        this.s3Presigner = s3Presigner;
         this.bucket = bucket;
+    }
+
+    @Override
+    public String createReadUrl(String objectKey, Duration validFor) {
+        try {
+            GetObjectRequest getObject = GetObjectRequest.builder().bucket(bucket).key(objectKey).build();
+            return s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                            .signatureDuration(validFor).getObjectRequest(getObject).build())
+                    .url().toString();
+        } catch (RuntimeException exception) {
+            throw new WakeProofStorageException("Failed to create wake proof read URL.", exception);
+        }
     }
 
     @Override

@@ -37,6 +37,7 @@ jwt:
 openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-5}
+  vision-model: ${OPENAI_VISION_MODEL:gpt-5-mini}
   timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:30}
 
 aws:

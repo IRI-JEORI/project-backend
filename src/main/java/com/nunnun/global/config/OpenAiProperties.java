@@ -7,6 +7,7 @@ public class OpenAiProperties {
 
     private String apiKey;
     private String model;
+    private String visionModel;
     private int timeoutSeconds;
 
     public String getApiKey() {
@@ -23,6 +24,14 @@ public class OpenAiProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getVisionModel() {
+        return visionModel;
+    }
+
+    public void setVisionModel(String visionModel) {
+        this.visionModel = visionModel;
     }
 
     public int getTimeoutSeconds() {

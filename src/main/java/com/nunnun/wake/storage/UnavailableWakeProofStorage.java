@@ -13,6 +13,11 @@ public class UnavailableWakeProofStorage implements WakeProofStorage {
     }
 
     @Override
+    public String createReadUrl(String objectKey, java.time.Duration validFor) {
+        throw new WakeProofStorageException("Wake proof storage is not configured.");
+    }
+
+    @Override
     public java.util.List<StoredObject> list(String prefix) {
         return java.util.List.of();
     }

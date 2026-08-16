@@ -44,6 +44,8 @@ public enum ErrorCode {
     WAKE_PROOF_ALREADY_EXISTS(HttpStatus.CONFLICT, "WAKE_PROOF_ALREADY_EXISTS", "Wake proof already exists."),
     INVALID_WAKE_PROOF_IMAGE(HttpStatus.BAD_REQUEST, "INVALID_WAKE_PROOF_IMAGE", "Invalid wake proof image."),
     WAKE_PROOF_UPLOAD_FAILED(HttpStatus.BAD_GATEWAY, "WAKE_PROOF_UPLOAD_FAILED", "Wake proof upload failed."),
+    RETRY_EXHAUSTED(HttpStatus.CONFLICT, "RETRY_EXHAUSTED", "All wake proof attempts have been used."),
+    POSE_ANALYSIS_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "POSE_ANALYSIS_FAILED", "AI pose analysis failed."),
     INVALID_WAKE_REQUEST_STATUS(HttpStatus.CONFLICT, "INVALID_WAKE_REQUEST_STATUS", "Wake request status does not allow this operation."),
     ROOMMATE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "ROOMMATE_GROUP_NOT_FOUND", "Roommate group not found."),
     ROOMMATE_GROUP_ALREADY_EXISTS(HttpStatus.CONFLICT, "ROOMMATE_GROUP_ALREADY_EXISTS", "User already belongs to a roommate group."),
