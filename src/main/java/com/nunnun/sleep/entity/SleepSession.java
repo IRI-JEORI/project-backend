@@ -49,15 +49,29 @@ public class SleepSession {
     protected SleepSession() {
     }
 
-    private SleepSession(User user, LocalDate sleepDate, LocalDateTime startedAt, SleepSessionSource source) {
+    private SleepSession(
+            User user,
+            LocalDate sleepDate,
+            LocalDateTime startedAt,
+            SleepSessionSource source
+    ) {
         this.user = Objects.requireNonNull(user);
         this.sleepDate = Objects.requireNonNull(sleepDate);
         this.startedAt = Objects.requireNonNull(startedAt);
         this.source = Objects.requireNonNull(source);
     }
 
-    public static SleepSession create(User user, LocalDate sleepDate, LocalDateTime startedAt) {
-        return new SleepSession(user, sleepDate, startedAt, SleepSessionSource.APP);
+    public static SleepSession create(
+            User user,
+            LocalDate sleepDate,
+            LocalDateTime startedAt
+    ) {
+        return new SleepSession(
+                user,
+                sleepDate,
+                startedAt,
+                SleepSessionSource.APP
+        );
     }
 
     public static SleepSession create(
@@ -66,7 +80,12 @@ public class SleepSession {
             LocalDateTime startedAt,
             SleepSessionSource source
     ) {
-        return new SleepSession(user, sleepDate, startedAt, source);
+        return new SleepSession(
+                user,
+                sleepDate,
+                startedAt,
+                source
+        );
     }
 
     public Long getId() {

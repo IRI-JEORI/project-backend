@@ -4,6 +4,7 @@ import com.nunnun.global.common.ApiResponse;
 import com.nunnun.global.security.jwt.AuthenticatedUser;
 import com.nunnun.sleep.dto.CreateSleepFeedbackRequest;
 import com.nunnun.sleep.dto.CreateSleepFeedbackResponse;
+import com.nunnun.sleep.dto.CreateSleepSessionRequest;
 import com.nunnun.sleep.dto.CreateSleepSessionResponse;
 import com.nunnun.sleep.service.SleepService;
 import jakarta.validation.Valid;
@@ -25,10 +26,12 @@ public class SleepController {
 
     @PostMapping("/me/sleep")
     public ResponseEntity<ApiResponse<CreateSleepSessionResponse>> createSleepSession(
-            @AuthenticationPrincipal AuthenticatedUser user
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestBody(required = false) CreateSleepSessionRequest request
     ) {
+        CreateSleepSessionRequest safeRequest = request == null ? new CreateSleepSessionRequest(null) : request;
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(sleepService.createSleepSession(user.userId())));
+                .body(ApiResponse.success(sleepService.createSleepSession(user.userId(), safeRequest.normalizedSource())));
     }
 
     @PostMapping("/me/sleep-feedback")

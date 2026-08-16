@@ -1,5 +1,6 @@
 package com.nunnun.notification.service;
 
+import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import org.springframework.stereotype.Component;
@@ -19,16 +20,29 @@ public class NotificationMessageFactory {
 
     public NotificationMessage returnTimeChanged(String roommateNickname, LocalTime returnTime) {
         return new NotificationMessage(
-                "룸메이트의 귀가 시간이 변경됐어요",
-                roommateNickname + "님의 예상 귀가 시간이 " + TIME_FORMAT.format(returnTime) + "으로 변경됐어요."
+                "룸메이트 귀가 시간이 변경됐어요",
+                roommateNickname + "님의 예상 귀가 시간이 " + TIME_FORMAT.format(returnTime) + "로 변경됐어요."
         );
     }
 
     public NotificationMessage bedtimeReminder(LocalTime targetBedTime) {
         return new NotificationMessage(
-                "취침 시간을 알려드려요",
+                "취침 시간이 다가와요",
                 "오늘 목표 취침 시간은 " + TIME_FORMAT.format(targetBedTime) + "이에요."
         );
+    }
+
+    public NotificationMessage bedtimeReminder(Duration remainingToWake) {
+        long totalMinutes = remainingToWake.toMinutes();
+        if (totalMinutes == 540) {
+            return new NotificationMessage("취침 시간이 다가와요", "취침 1시간 전이에요.");
+        }
+        long hours = totalMinutes / 60;
+        long minutes = totalMinutes % 60;
+        String remainingText = minutes == 0
+                ? hours + "시간"
+                : hours + "시간 " + minutes + "분";
+        return new NotificationMessage("취침 시간이 다가와요", "기상까지 " + remainingText + " 남았어요.");
     }
 
     public record NotificationMessage(String title, String body) {

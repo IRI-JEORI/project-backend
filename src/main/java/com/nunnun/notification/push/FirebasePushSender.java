@@ -55,6 +55,13 @@ public class FirebasePushSender implements PushSender {
         if (message.referenceId() != null) {
             builder.putData("referenceId", message.referenceId().toString());
         }
+        if (message.type() == com.nunnun.notification.entity.NotificationType.BEDTIME_REMINDER) {
+            builder.putData("silent", "true");
+            builder.putData("action", "SLEEP");
+            if (message.targetWakeAt() != null) {
+                builder.putData("target_wake_at", message.targetWakeAt().toString());
+            }
+        }
         return builder.build();
     }
 }

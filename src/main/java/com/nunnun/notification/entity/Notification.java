@@ -97,7 +97,15 @@ public class Notification {
             Long referenceId,
             LocalDateTime now
     ) {
-        return new Notification(user, type, title, body, referenceId, null, Objects.requireNonNull(now));
+        return new Notification(
+                user,
+                type,
+                title,
+                body,
+                referenceId,
+                null,
+                Objects.requireNonNull(now)
+        );
     }
 
     public static Notification createScheduled(
@@ -108,7 +116,15 @@ public class Notification {
             Long referenceId,
             LocalDateTime scheduledAt
     ) {
-        return createScheduled(user, type, title, body, referenceId, null, scheduledAt);
+        return createScheduled(
+                user,
+                type,
+                title,
+                body,
+                referenceId,
+                null,
+                scheduledAt
+        );
     }
 
     public static Notification createScheduled(
@@ -155,15 +171,54 @@ public class Notification {
         }
     }
 
-    public Long getId() { return id; }
-    public User getUser() { return user; }
-    public NotificationType getType() { return type; }
-    public String getTitle() { return title; }
-    public String getBody() { return body; }
-    public Long getReferenceId() { return referenceId; }
-    public LocalDateTime getTargetWakeAt() { return targetWakeAt; }
-    public LocalDateTime getScheduledAt() { return scheduledAt; }
-    public LocalDateTime getSentAt() { return sentAt; }
-    public NotificationStatus getStatus() { return status; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void reactivate() {
+        if (status == NotificationStatus.CANCELLED) {
+            this.status = NotificationStatus.PENDING;
+            this.sentAt = null;
+        }
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public NotificationType getType() {
+        return type;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getBody() {
+        return body;
+    }
+
+    public Long getReferenceId() {
+        return referenceId;
+    }
+
+    public LocalDateTime getTargetWakeAt() {
+        return targetWakeAt;
+    }
+
+    public LocalDateTime getScheduledAt() {
+        return scheduledAt;
+    }
+
+    public LocalDateTime getSentAt() {
+        return sentAt;
+    }
+
+    public NotificationStatus getStatus() {
+        return status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
