@@ -3,6 +3,7 @@ package com.nunnun.wake.controller;
 import com.nunnun.global.common.ApiResponse;
 import com.nunnun.global.security.jwt.AuthenticatedUser;
 import com.nunnun.wake.dto.CreateWakeProofResponse;
+import com.nunnun.wake.dto.CreateSelfVerifyResponse;
 import com.nunnun.wake.dto.CreateWakeRequestResponse;
 import com.nunnun.wake.dto.WakeRequestDetailResponse;
 import com.nunnun.wake.service.WakeProofService;
@@ -39,6 +40,14 @@ public class WakeRequestController {
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(wakeRequestService.createWakeRequest(user.userId(), groupId, receiverId)));
+    }
+
+    @PostMapping("/me/self-verify")
+    public ResponseEntity<ApiResponse<CreateSelfVerifyResponse>> createSelfVerify(
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(wakeRequestService.createSelfVerify(user.userId())));
     }
 
     @GetMapping("/wake-requests/{requestId}")

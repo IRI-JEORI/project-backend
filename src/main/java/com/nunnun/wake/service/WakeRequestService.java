@@ -8,6 +8,7 @@ import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.dto.CreateWakeRequestResponse;
+import com.nunnun.wake.dto.CreateSelfVerifyResponse;
 import com.nunnun.wake.dto.WakeRequestDetailResponse;
 import com.nunnun.wake.entity.DailyPose;
 import com.nunnun.wake.entity.WakeGroup;
@@ -85,6 +86,20 @@ public class WakeRequestService {
         WakeRequest request = wakeRequestRepository.save(WakeRequest.send(group, sender, receiver, now));
         notificationService.createWakeRequest(request);
         return new CreateWakeRequestResponse(request.getId(), request.getStatus(), request.getRequestedAt());
+    }
+
+    @Transactional
+    public CreateSelfVerifyResponse createSelfVerify(Long userId) {
+        User user = userWriteGuard.lockActive(userId);
+        WakeGroup membershipGroup = wakeGroupMemberRepository.findByUserId(userId)
+                .map(member -> member.getWakeGroup())
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
+        WakeGroup group = wakeGroupRepository.findByIdForUpdate(membershipGroup.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
+        LocalDateTime now = LocalDateTime.now(clock);
+        DailyPose dailyPose = dailyPoseService.getOrCreateDailyPose(group.getId(), now.toLocalDate());
+        WakeRequest request = wakeRequestRepository.save(WakeRequest.send(group, user, user, now));
+        return CreateSelfVerifyResponse.from(request, dailyPose);
     }
 
     @Transactional(readOnly = true)

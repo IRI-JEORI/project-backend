@@ -94,6 +94,40 @@ class WakeRequestConcurrencyTest {
         assertThat(dailyPoses.count()).isEqualTo(1);
     }
 
+    @Test
+    void concurrentSelfVerifyCreatesEveryRequestAndOneDailyPose() throws Exception {
+        User user = user("self-race@example.com");
+        WakeGroup group = groups.saveAndFlush(WakeGroup.create("Self Race", "SELFR1", user));
+        members.saveAndFlush(WakeGroupMember.join(group, user, (short) 1));
+        poses.saveAndFlush(Pose.create("SELF_RACE_POSE", "test/self-race-pose.png", "self race pose"));
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger successes = new AtomicInteger();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        for (int index = 0; index < 2; index++) {
+            executor.submit(() -> {
+                ready.countDown();
+                try {
+                    start.await();
+                    service.createSelfVerify(user.getId());
+                    successes.incrementAndGet();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+        executor.shutdown();
+        assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(successes).hasValue(2);
+        assertThat(requests.count()).isEqualTo(2);
+        assertThat(dailyPoses.count()).isEqualTo(1);
+        assertThat(notifications.count()).isZero();
+    }
+
     private User user(String email) {
         return users.saveAndFlush(User.create("user", email, encoder.encode("password123!")));
     }
