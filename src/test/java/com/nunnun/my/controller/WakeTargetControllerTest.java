@@ -142,6 +142,16 @@ class WakeTargetControllerTest {
                         jsonPath(
                                 "$.data.target_wake_time"
                         ).value("07:30")
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.display_text"
+                        ).value("월요일, 07:30")
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.length()"
+                        ).value(3)
                 );
 
         WeeklyWakeTarget saved =
@@ -912,27 +922,47 @@ class WakeTargetControllerTest {
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets.length()"
-                        ).value(2)
+                                "$.data.targets.length()"
+                        ).value(7)
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets[0].day_of_week"
+                                "$.data.targets[0].day_of_week"
                         ).value("MONDAY")
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets[0].target_wake_time"
+                                "$.data.targets[0].display_day"
+                        ).value("월요일")
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.targets[0].target_wake_time"
                         ).value("07:30")
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets[1].day_of_week"
+                                "$.data.targets[0].length()"
+                        ).value(3)
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.wake_targets"
+                        ).doesNotExist()
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.targets[1].target_wake_time"
+                        ).value(org.hamcrest.Matchers.nullValue())
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.targets[4].day_of_week"
                         ).value("FRIDAY")
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets[1].target_wake_time"
+                                "$.data.targets[4].target_wake_time"
                         ).value("09:00")
                 );
 
@@ -950,18 +980,18 @@ class WakeTargetControllerTest {
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets.length()"
-                        ).value(1)
+                                "$.data.targets.length()"
+                        ).value(7)
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets[0].target_wake_time"
+                                "$.data.targets[0].target_wake_time"
                         ).value("06:40")
                 );
     }
 
     @Test
-    void returnsEmptyListWithoutPlaceholderDays()
+    void returnsAllDaysWithNullTimesWhenNoTargetsAreConfigured()
             throws Exception {
 
         User user =
@@ -983,8 +1013,23 @@ class WakeTargetControllerTest {
                 )
                 .andExpect(
                         jsonPath(
-                                "$.data.wake_targets"
-                        ).isEmpty()
+                                "$.data.targets.length()"
+                        ).value(7)
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.targets[0].day_of_week"
+                        ).value("MONDAY")
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.targets[0].display_day"
+                        ).value("월요일")
+                )
+                .andExpect(
+                        jsonPath(
+                                "$.data.targets[0].target_wake_time"
+                        ).value(org.hamcrest.Matchers.nullValue())
                 );
     }
 

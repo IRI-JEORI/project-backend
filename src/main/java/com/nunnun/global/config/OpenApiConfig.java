@@ -28,7 +28,7 @@ public class OpenApiConfig {
     @Bean
     public OpenApiCustomizer bearerAuthOpenApiCustomizer() {
         return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
-            if (!path.startsWith("/auth/")) {
+            if (!path.startsWith("/auth/") && !path.equals("/demo-accounts")) {
                 pathItem.readOperations().forEach(operation -> operation.addSecurityItem(
                         new SecurityRequirement().addList("bearerAuth")
                 ));

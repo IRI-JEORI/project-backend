@@ -17,6 +17,7 @@ import com.nunnun.user.service.UserWriteGuard;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SleepService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final SleepSessionRepository sleepSessionRepository;
     private final SleepFeedbackRepository sleepFeedbackRepository;
@@ -88,7 +91,7 @@ public class SleepService {
 
         return new CreateSleepSessionResponse(
                 session.getId(),
-                session.getStartedAt(),
+                session.getStartedAt().atZone(BUSINESS_ZONE).toOffsetDateTime(),
                 cancelled
         );
     }

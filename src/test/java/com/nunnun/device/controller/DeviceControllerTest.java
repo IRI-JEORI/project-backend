@@ -53,9 +53,8 @@ class DeviceControllerTest {
         mockMvc.perform(register(user, "token-A", "ANDROID"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.deviceId").isNumber())
-                .andExpect(jsonPath("$.data.platform").value("ANDROID"))
-                .andExpect(jsonPath("$.data.fcmToken").doesNotExist());
+                .andExpect(jsonPath("$.data.registered").value(true))
+                .andExpect(jsonPath("$.data.length()").value(1));
 
         UserDevice userDevice = deviceRepository.findByFcmToken("token-A").orElseThrow();
         assertThat(userDevice.getUser().getId()).isEqualTo(user.getId());
@@ -136,7 +135,7 @@ class DeviceControllerTest {
         mockMvc.perform(post("/devices")
                         .header("Authorization", bearerTokenFor(user))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fcmToken\":\"token-A\"}"))
+                        .content("{\"fcm_token\":\"token-A\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
@@ -154,7 +153,7 @@ class DeviceControllerTest {
     void requiresAuthenticationToRegisterDevice() throws Exception {
         mockMvc.perform(post("/devices")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("fcmToken", "token-A", "platform", "ANDROID"))))
+                        .content(objectMapper.writeValueAsString(Map.of("fcm_token", "token-A", "platform", "ANDROID"))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
     }
@@ -171,7 +170,7 @@ class DeviceControllerTest {
         return post("/devices")
                 .header("Authorization", bearerTokenFor(user))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("fcmToken", fcmToken, "platform", platform)));
+                .content(objectMapper.writeValueAsString(Map.of("fcm_token", fcmToken, "platform", platform)));
     }
 
     private String bearerTokenFor(User user) {

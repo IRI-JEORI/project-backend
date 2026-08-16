@@ -38,6 +38,6 @@ public class DeviceService {
                 })
                 .orElseGet(() -> deviceRepository.save(UserDevice.create(user, request.fcmToken(), request.platform())));
 
-        return RegisterDeviceResponse.from(userDevice);
+        return new RegisterDeviceResponse(true);
     }
 }

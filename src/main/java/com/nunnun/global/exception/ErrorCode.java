@@ -39,7 +39,7 @@ public enum ErrorCode {
     WAKE_GROUP_SENDER_NOT_MEMBER(HttpStatus.FORBIDDEN, "WAKE_GROUP_SENDER_NOT_MEMBER", "Sender is not a wake group member."),
     WAKE_GROUP_RECEIVER_NOT_MEMBER(HttpStatus.BAD_REQUEST, "WAKE_GROUP_RECEIVER_NOT_MEMBER", "Receiver is not a wake group member."),
     WAKE_BLOCKED_DND(HttpStatus.CONFLICT, "WAKE_BLOCKED_DND", "Receiver is in DND."),
-    WAKE_COOLDOWN_ACTIVE(HttpStatus.CONFLICT, "WAKE_COOLDOWN_ACTIVE", "Receiver is in wake cooldown."),
+    WAKE_COOLDOWN(HttpStatus.CONFLICT, "WAKE_COOLDOWN", "Receiver is in wake cooldown."),
     WAKE_REQUEST_ACCESS_DENIED(HttpStatus.FORBIDDEN, "WAKE_REQUEST_ACCESS_DENIED", "No access to this wake request."),
     WAKE_PROOF_ALREADY_EXISTS(HttpStatus.CONFLICT, "WAKE_PROOF_ALREADY_EXISTS", "Wake proof already exists."),
     INVALID_WAKE_PROOF_IMAGE(HttpStatus.BAD_REQUEST, "INVALID_WAKE_PROOF_IMAGE", "Invalid wake proof image."),

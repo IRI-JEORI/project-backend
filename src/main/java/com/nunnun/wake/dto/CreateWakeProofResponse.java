@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nunnun.wake.entity.PoseMatchResult;
 import com.nunnun.wake.entity.WakeRequestStatus;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CreateWakeProofResponse(
@@ -15,8 +15,8 @@ public record CreateWakeProofResponse(
         @JsonProperty("request_status") WakeRequestStatus requestStatus,
         @JsonProperty("can_retry") boolean canRetry,
         @JsonProperty("remaining_attempts") int remainingAttempts,
-        @JsonProperty("verified_at") LocalDateTime verifiedAt,
-        @JsonProperty("cooldown_until") LocalDateTime cooldownUntil,
-        @JsonProperty("proof_expires_at") LocalDateTime proofExpiresAt
+        @JsonProperty("verified_at") OffsetDateTime verifiedAt,
+        @JsonProperty("cooldown_until") OffsetDateTime cooldownUntil,
+        @JsonProperty("proof_expires_at") OffsetDateTime proofExpiresAt
 ) {
 }
