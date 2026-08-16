@@ -4,8 +4,15 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found."),
+    DEMO_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "DEMO_ACCOUNT_NOT_FOUND", "Demo account not found."),
     FIXED_SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "FIXED_SCHEDULE_NOT_FOUND", "Fixed schedule not found."),
     INVALID_FIXED_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_FIXED_SCHEDULE_TIME", "Start time must be before end time."),
+    INVALID_WAKE_TARGET_FORMAT(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_WAKE_TARGET_FORMAT",
+            "예시와 같은 형식으로 다시 입력해주세요. 예) 월요일, 07:30"
+    ),
+    WAKE_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_TARGET_NOT_FOUND", "Wake target not found."),
     SLEEP_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "SLEEP_FEEDBACK_ALREADY_EXISTS", "Sleep feedback already exists for today."),
     WAKE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_GROUP_NOT_FOUND", "Wake group not found."),
     WAKE_GROUP_ALREADY_JOINED(HttpStatus.CONFLICT, "WAKE_GROUP_ALREADY_JOINED", "User already joined this wake group."),

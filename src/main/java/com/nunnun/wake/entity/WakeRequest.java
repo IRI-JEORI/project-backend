@@ -15,11 +15,13 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import org.hibernate.annotations.Check;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(name = "wake_requests")
+@Check(constraints = "attempt_count BETWEEN 0 AND 2 AND status IN ('SENT', 'VERIFIED', 'NEEDS_HELP')")
 @EntityListeners(AuditingEntityListener.class)
 public class WakeRequest {
 
@@ -43,6 +45,9 @@ public class WakeRequest {
     @Column(nullable = false, length = 20)
     private WakeRequestStatus status;
 
+    @Column(name = "attempt_count", nullable = false)
+    private Short attemptCount;
+
     @Column(name = "requested_at", nullable = false)
     private LocalDateTime requestedAt;
 
@@ -58,6 +63,7 @@ public class WakeRequest {
         this.sender = Objects.requireNonNull(sender);
         this.receiver = Objects.requireNonNull(receiver);
         this.status = WakeRequestStatus.SENT;
+        this.attemptCount = (short) 0;
         this.requestedAt = Objects.requireNonNull(requestedAt);
     }
 
@@ -73,15 +79,12 @@ public class WakeRequest {
         this.status = WakeRequestStatus.VERIFIED;
     }
 
-    public void expire() {
-        this.status = WakeRequestStatus.EXPIRED;
-    }
-
     public Long getId() { return id; }
     public WakeGroup getWakeGroup() { return wakeGroup; }
     public User getSender() { return sender; }
     public User getReceiver() { return receiver; }
     public WakeRequestStatus getStatus() { return status; }
+    public Short getAttemptCount() { return attemptCount; }
     public LocalDateTime getRequestedAt() { return requestedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

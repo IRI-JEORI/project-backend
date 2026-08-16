@@ -78,7 +78,7 @@
 
 ## Domain-specific contract reminders
 
-- Wake request states are finite (`SENT`, `VERIFIED`, `EXPIRED`) and must be represented by an enum.
+- Wake request states are finite (`SENT`, `VERIFIED`, `NEEDS_HELP`) and must be represented by an enum.
 - Roommate group states are finite (`WAITING`, `ACTIVE`) and must be represented by an enum.
 - Sleep feedback values are finite (`VERY_BAD`, `BAD`, `NORMAL`, `GOOD`, `VERY_GOOD`) and must be represented by an enum.
 - A wake proof verification creates a 30-minute wake cooldown calculated from `verified_at`; do not introduce an unapproved cooldown column.

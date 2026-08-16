@@ -20,11 +20,17 @@ public class User {
     @Column(nullable = false, length = 30)
     private String nickname;
 
+    @Column(name = "avatar_url", length = 512)
+    private String avatarUrl;
+
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
+
+    @Column(name = "is_demo", nullable = false)
+    private boolean demo;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -32,14 +38,20 @@ public class User {
     protected User() {
     }
 
-    private User(String nickname, String email, String passwordHash) {
+    private User(String nickname, String email, String passwordHash, String avatarUrl, boolean demo) {
         this.nickname = Objects.requireNonNull(nickname);
         this.email = Objects.requireNonNull(email);
         this.passwordHash = Objects.requireNonNull(passwordHash);
+        this.avatarUrl = avatarUrl;
+        this.demo = demo;
     }
 
     public static User create(String nickname, String email, String passwordHash) {
-        return new User(nickname, email, passwordHash);
+        return new User(nickname, email, passwordHash, null, false);
+    }
+
+    public static User createDemo(String nickname, String email, String passwordHash, String avatarUrl) {
+        return new User(nickname, email, passwordHash, avatarUrl, true);
     }
 
     public void changeNickname(String nickname) {
@@ -71,8 +83,16 @@ public class User {
         return email;
     }
 
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
     public String getPasswordHash() {
         return passwordHash;
+    }
+
+    public boolean isDemo() {
+        return demo;
     }
 
     public LocalDateTime getDeletedAt() {

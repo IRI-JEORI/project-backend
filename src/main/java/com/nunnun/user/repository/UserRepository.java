@@ -1,6 +1,7 @@
 package com.nunnun.user.repository;
 
 import com.nunnun.user.entity.User;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -15,6 +16,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmailAndDeletedAtIsNull(String email);
 
     Optional<User> findByIdAndDeletedAtIsNull(Long id);
+
+    List<User> findAllByDemoTrueAndDeletedAtIsNullOrderByIdAsc();
+
+    Optional<User> findByIdAndDemoTrueAndDeletedAtIsNull(Long id);
 
     boolean existsByIdAndDeletedAtIsNull(Long id);
 

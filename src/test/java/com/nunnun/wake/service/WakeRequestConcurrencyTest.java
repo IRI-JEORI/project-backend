@@ -45,7 +45,7 @@ class WakeRequestConcurrencyTest {
     }
 
     @Test
-    void concurrentSendersCreateExactlyOneRequestForSameReceiver() throws Exception {
+    void concurrentSendersCanCreateRequestsForSameReceiver() throws Exception {
         User first = user("first-race@example.com");
         User second = user("second-race@example.com");
         User third = user("third-race@example.com");
@@ -59,7 +59,7 @@ class WakeRequestConcurrencyTest {
         CountDownLatch ready = new CountDownLatch(3);
         CountDownLatch start = new CountDownLatch(1);
         AtomicInteger successes = new AtomicInteger();
-        AtomicInteger cooldowns = new AtomicInteger();
+        AtomicInteger rejections = new AtomicInteger();
         ExecutorService executor = Executors.newFixedThreadPool(3);
         for (User sender : List.of(first, second, third)) {
             executor.submit(() -> {
@@ -69,7 +69,7 @@ class WakeRequestConcurrencyTest {
                     service.createWakeRequest(sender.getId(), group.getId(), receiver.getId());
                     successes.incrementAndGet();
                 } catch (BusinessException exception) {
-                    cooldowns.incrementAndGet();
+                    rejections.incrementAndGet();
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
                 }
@@ -80,9 +80,9 @@ class WakeRequestConcurrencyTest {
         executor.shutdown();
         assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
 
-        assertThat(successes).hasValue(1);
-        assertThat(cooldowns).hasValue(2);
-        assertThat(requests.count()).isEqualTo(1);
+        assertThat(successes).hasValue(3);
+        assertThat(rejections).hasValue(0);
+        assertThat(requests.count()).isEqualTo(3);
     }
 
     private User user(String email) {
