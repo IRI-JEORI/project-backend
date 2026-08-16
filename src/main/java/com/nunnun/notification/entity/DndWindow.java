@@ -19,6 +19,8 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Objects;
 import org.hibernate.annotations.Check;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
@@ -46,9 +48,11 @@ public class DndWindow {
     private DayOfWeek dayOfWeek;
 
     @Column(name = "start_time", nullable = false)
+    @JdbcTypeCode(SqlTypes.LOCAL_TIME)
     private LocalTime startTime;
 
     @Column(name = "end_time", nullable = false)
+    @JdbcTypeCode(SqlTypes.LOCAL_TIME)
     private LocalTime endTime;
 
     @CreatedDate

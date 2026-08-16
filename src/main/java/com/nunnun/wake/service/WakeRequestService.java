@@ -2,6 +2,7 @@ package com.nunnun.wake.service;
 
 import com.nunnun.global.exception.BusinessException;
 import com.nunnun.global.exception.ErrorCode;
+import com.nunnun.notification.service.DndWindowService;
 import com.nunnun.notification.service.NotificationService;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
@@ -15,6 +16,7 @@ import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class WakeRequestService {
     private final UserRepository userRepository;
     private final Clock clock;
     private final NotificationService notificationService;
+    private final DndWindowService dndWindowService;
     private final UserWriteGuard userWriteGuard;
 
     public WakeRequestService(
@@ -38,6 +41,7 @@ public class WakeRequestService {
             UserRepository userRepository,
             Clock clock,
             NotificationService notificationService,
+            DndWindowService dndWindowService,
             UserWriteGuard userWriteGuard
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
@@ -46,6 +50,7 @@ public class WakeRequestService {
         this.userRepository = userRepository;
         this.clock = clock;
         this.notificationService = notificationService;
+        this.dndWindowService = dndWindowService;
         this.userWriteGuard = userWriteGuard;
     }
 
@@ -64,6 +69,9 @@ public class WakeRequestService {
         }
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, receiverId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_RECEIVER_NOT_MEMBER);
+        }
+        if (dndWindowService.isDndActive(receiverId, ZonedDateTime.now(clock))) {
+            throw new BusinessException(ErrorCode.WAKE_BLOCKED_DND);
         }
         LocalDateTime now = LocalDateTime.now(clock);
         if (wakeRequestRepository.existsRecentVerifiedProofByReceiverId(receiverId, now.minusMinutes(30))) {

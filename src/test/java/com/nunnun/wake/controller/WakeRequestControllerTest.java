@@ -16,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.nunnun.auth.repository.RefreshTokenRepository;
 import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
+import com.nunnun.notification.entity.DndWindow;
+import com.nunnun.notification.repository.DndWindowRepository;
 import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
@@ -34,8 +36,10 @@ import com.nunnun.wake.service.WakeProofCleanupService;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,6 +74,7 @@ class WakeRequestControllerTest {
     @Autowired private WakeProofRepository wakeProofRepository;
     @Autowired private WakeProofCleanupService wakeProofCleanupService;
     @Autowired private NotificationRepository notificationRepository;
+    @Autowired private DndWindowRepository dndWindowRepository;
     @Autowired private SleepFeedbackRepository sleepFeedbackRepository;
     @Autowired private SleepSessionRepository sleepSessionRepository;
     @Autowired private DeviceRepository deviceRepository;
@@ -143,6 +148,54 @@ class WakeRequestControllerTest {
         previous = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW.minusMinutes(30)));
         wakeProofRepository.saveAndFlush(WakeProof.verify(previous, "wake-proofs/boundary.jpg", NOW.minusMinutes(30)));
         wake(sender, group.getId(), receiver.getId()).andExpect(status().isCreated());
+    }
+
+    @Test
+    void blocksReceiverDndBeforeCooldownWithoutCreatingRequest() throws Exception {
+        User sender = saveUser("dnd-sender@example.com");
+        User receiver = saveUser("dnd-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest previous = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(10))
+        );
+        wakeProofRepository.saveAndFlush(
+                WakeProof.verify(previous, "wake-proofs/dnd-priority.jpg", NOW.minusMinutes(10))
+        );
+        dndWindowRepository.saveAndFlush(DndWindow.create(
+                receiver,
+                DayOfWeek.WEDNESDAY,
+                LocalTime.of(23, 0),
+                LocalTime.of(23, 59)
+        ));
+
+        wake(sender, group.getId(), receiver.getId())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("WAKE_BLOCKED_DND"));
+
+        assertThat(wakeRequestRepository.findAllByWakeGroupId(group.getId()))
+                .extracting(WakeRequest::getId)
+                .containsExactly(previous.getId());
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void allowsWakeWhenReceiverDndIsInactive() throws Exception {
+        User sender = saveUser("inactive-dnd-sender@example.com");
+        User receiver = saveUser("inactive-dnd-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        dndWindowRepository.saveAndFlush(DndWindow.create(
+                receiver,
+                DayOfWeek.WEDNESDAY,
+                LocalTime.of(20, 0),
+                LocalTime.of(21, 0)
+        ));
+
+        wake(sender, group.getId(), receiver.getId())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("SENT"));
+
+        assertThat(wakeRequestRepository.findAllByWakeGroupId(group.getId()))
+                .hasSize(1);
     }
 
     @Test
@@ -265,6 +318,7 @@ class WakeRequestControllerTest {
 
     private void clearData() {
         notificationRepository.deleteAllInBatch();
+        dndWindowRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
         wakeGroupMemberRepository.deleteAllInBatch();
