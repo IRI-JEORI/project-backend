@@ -37,6 +37,7 @@ class WakeGroupMemberRepositoryTest {
         User creator = saveUser("creator@example.com");
         User anotherUser = saveUser("another@example.com");
         WakeGroup group = saveGroup(creator, "CODE01");
+        WakeGroup anotherGroup = saveGroup(anotherUser, "CODE03");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, creator, (short) 1));
 
         assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
@@ -44,6 +45,9 @@ class WakeGroupMemberRepositoryTest {
         )).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
                 WakeGroupMember.join(group, anotherUser, (short) 1)
+        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
+                WakeGroupMember.join(anotherGroup, creator, (short) 1)
         )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -56,7 +60,7 @@ class WakeGroupMemberRepositoryTest {
                 WakeGroupMember.join(group, creator, (short) 0)
         )).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
-                WakeGroupMember.join(group, creator, (short) 13)
+                WakeGroupMember.join(group, creator, (short) 9)
         )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
