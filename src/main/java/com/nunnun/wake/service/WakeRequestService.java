@@ -9,6 +9,7 @@ import com.nunnun.user.repository.UserRepository;
 import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.dto.CreateWakeRequestResponse;
 import com.nunnun.wake.dto.WakeRequestDetailResponse;
+import com.nunnun.wake.entity.DailyPose;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeRequest;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
@@ -33,6 +34,7 @@ public class WakeRequestService {
     private final NotificationService notificationService;
     private final DndWindowService dndWindowService;
     private final UserWriteGuard userWriteGuard;
+    private final DailyPoseService dailyPoseService;
 
     public WakeRequestService(
             WakeGroupRepository wakeGroupRepository,
@@ -42,7 +44,8 @@ public class WakeRequestService {
             Clock clock,
             NotificationService notificationService,
             DndWindowService dndWindowService,
-            UserWriteGuard userWriteGuard
+            UserWriteGuard userWriteGuard,
+            DailyPoseService dailyPoseService
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
@@ -52,6 +55,7 @@ public class WakeRequestService {
         this.notificationService = notificationService;
         this.dndWindowService = dndWindowService;
         this.userWriteGuard = userWriteGuard;
+        this.dailyPoseService = dailyPoseService;
     }
 
     @Transactional
@@ -77,6 +81,7 @@ public class WakeRequestService {
         if (wakeRequestRepository.existsRecentVerifiedProofByReceiverId(receiverId, now.minusMinutes(30))) {
             throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
         }
+        dailyPoseService.getOrCreateDailyPose(groupId, now.toLocalDate());
         WakeRequest request = wakeRequestRepository.save(WakeRequest.send(group, sender, receiver, now));
         notificationService.createWakeRequest(request);
         return new CreateWakeRequestResponse(request.getId(), request.getStatus(), request.getRequestedAt());
@@ -89,7 +94,11 @@ public class WakeRequestService {
         if (!request.getSender().getId().equals(userId) && !request.getReceiver().getId().equals(userId)) {
             throw new BusinessException(ErrorCode.WAKE_REQUEST_ACCESS_DENIED);
         }
-        return WakeRequestDetailResponse.from(request);
+        DailyPose dailyPose = dailyPoseService.getDailyPose(
+                request.getWakeGroup().getId(),
+                request.getRequestedAt().toLocalDate()
+        );
+        return WakeRequestDetailResponse.from(request, dailyPose);
     }
 
     private User findActiveUser(Long userId) {

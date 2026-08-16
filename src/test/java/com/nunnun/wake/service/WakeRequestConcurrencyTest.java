@@ -8,6 +8,9 @@ import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeGroupMember;
+import com.nunnun.wake.entity.Pose;
+import com.nunnun.wake.repository.DailyPoseRepository;
+import com.nunnun.wake.repository.PoseRepository;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
@@ -32,6 +35,8 @@ class WakeRequestConcurrencyTest {
     @Autowired WakeGroupRepository groups;
     @Autowired WakeGroupMemberRepository members;
     @Autowired NotificationRepository notifications;
+    @Autowired DailyPoseRepository dailyPoses;
+    @Autowired PoseRepository poses;
     @Autowired UserRepository users;
     @Autowired PasswordEncoder encoder;
 
@@ -39,8 +44,10 @@ class WakeRequestConcurrencyTest {
     void clean() {
         notifications.deleteAllInBatch();
         requests.deleteAllInBatch();
+        dailyPoses.deleteAllInBatch();
         members.deleteAllInBatch();
         groups.deleteAllInBatch();
+        poses.deleteAllInBatch();
         users.deleteAllInBatch();
     }
 
@@ -51,6 +58,7 @@ class WakeRequestConcurrencyTest {
         User third = user("third-race@example.com");
         User receiver = user("receiver-race@example.com");
         WakeGroup group = groups.saveAndFlush(WakeGroup.create("Race", "RACE01", first));
+        poses.saveAndFlush(Pose.create("RACE_POSE", "test/race-pose.png", "race pose"));
         List<User> all = List.of(first, second, third, receiver);
         for (int index = 0; index < all.size(); index++) {
             members.saveAndFlush(WakeGroupMember.join(group, all.get(index), (short) (index + 1)));
@@ -83,6 +91,7 @@ class WakeRequestConcurrencyTest {
         assertThat(successes).hasValue(3);
         assertThat(rejections).hasValue(0);
         assertThat(requests.count()).isEqualTo(3);
+        assertThat(dailyPoses.count()).isEqualTo(1);
     }
 
     private User user(String email) {

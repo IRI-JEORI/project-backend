@@ -17,6 +17,8 @@ import com.nunnun.auth.repository.RefreshTokenRepository;
 import com.nunnun.device.repository.DeviceRepository;
 import com.nunnun.global.security.jwt.JwtTokenProvider;
 import com.nunnun.notification.entity.DndWindow;
+import com.nunnun.notification.entity.Notification;
+import com.nunnun.notification.entity.NotificationType;
 import com.nunnun.notification.repository.DndWindowRepository;
 import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
@@ -25,11 +27,15 @@ import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeGroupMember;
+import com.nunnun.wake.entity.DailyPose;
+import com.nunnun.wake.entity.Pose;
 import com.nunnun.wake.entity.WakeProof;
 import com.nunnun.wake.entity.WakeRequest;
 import com.nunnun.wake.entity.WakeRequestStatus;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
+import com.nunnun.wake.repository.DailyPoseRepository;
+import com.nunnun.wake.repository.PoseRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import com.nunnun.wake.service.WakeProofCleanupService;
@@ -72,6 +78,8 @@ class WakeRequestControllerTest {
     @Autowired private WakeGroupMemberRepository wakeGroupMemberRepository;
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
+    @Autowired private DailyPoseRepository dailyPoseRepository;
+    @Autowired private PoseRepository poseRepository;
     @Autowired private WakeProofCleanupService wakeProofCleanupService;
     @Autowired private NotificationRepository notificationRepository;
     @Autowired private DndWindowRepository dndWindowRepository;
@@ -83,12 +91,16 @@ class WakeRequestControllerTest {
     @Autowired private JwtTokenProvider jwtTokenProvider;
     @Autowired private PasswordEncoder passwordEncoder;
     @MockBean private WakeProofStorage wakeProofStorage;
+    private Pose activePose;
 
     @BeforeEach
     void setUp() {
         clock.set(NOW);
         reset(wakeProofStorage);
         clearData();
+        activePose = poseRepository.saveAndFlush(
+                Pose.create("TEST_POSE", "test/pose.png", "양손으로 머리 위 하트를 만들어주세요")
+        );
     }
 
     @AfterEach
@@ -106,12 +118,19 @@ class WakeRequestControllerTest {
                         .header("Authorization", bearer(sender)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.status").value("SENT"))
-                .andExpect(jsonPath("$.data.requestedAt").value("2026-08-12T23:40:00"));
+                .andExpect(jsonPath("$.data.requested_at").value("2026-08-12T23:40:00"));
 
         WakeRequest request = wakeRequestRepository.findAll().getFirst();
         assertThat(request.getSender().getId()).isEqualTo(sender.getId());
         assertThat(request.getReceiver().getId()).isEqualTo(receiver.getId());
         assertThat(request.getStatus()).isEqualTo(WakeRequestStatus.SENT);
+        assertThat(request.getAttemptCount()).isZero();
+        assertThat(dailyPoseRepository.countByWakeGroupIdAndPoseDate(
+                group.getId(), NOW.toLocalDate())).isEqualTo(1);
+        Notification notification = notificationRepository.findAll().getFirst();
+        assertThat(notification.getType()).isEqualTo(NotificationType.WAKE_REQUEST);
+        assertThat(notification.getUser().getId()).isEqualTo(receiver.getId());
+        assertThat(notification.getReferenceId()).isEqualTo(request.getId());
     }
 
     @Test
@@ -140,8 +159,13 @@ class WakeRequestControllerTest {
 
         wake(sender, group.getId(), receiver.getId()).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("WAKE_COOLDOWN_ACTIVE"));
+        assertThat(dailyPoseRepository.count()).isZero();
+        assertThat(notificationRepository.count()).isZero();
 
         clearData();
+        activePose = poseRepository.saveAndFlush(
+                Pose.create("TEST_POSE_2", "test/pose-2.png", "두 팔을 벌려주세요")
+        );
         sender = saveUser("sender2@example.com");
         receiver = saveUser("receiver2@example.com");
         group = createGroup(sender, receiver);
@@ -176,6 +200,7 @@ class WakeRequestControllerTest {
                 .extracting(WakeRequest::getId)
                 .containsExactly(previous.getId());
         assertThat(notificationRepository.findAll()).isEmpty();
+        assertThat(dailyPoseRepository.count()).isZero();
     }
 
     @Test
@@ -205,10 +230,17 @@ class WakeRequestControllerTest {
         User outsider = saveUser("outsider@example.com");
         WakeGroup group = createGroup(sender, receiver);
         WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW));
+        dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
 
         mockMvc.perform(get("/wake-requests/{id}", request.getId()).header("Authorization", bearer(receiver)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SENT"))
                 .andExpect(jsonPath("$.data.sender.nickname").value("nunnun"))
+                .andExpect(jsonPath("$.data.requested_at").value("2026-08-12T23:40:00"))
+                .andExpect(jsonPath("$.data.pose.date").value("2026-08-12"))
+                .andExpect(jsonPath("$.data.pose.description").value("양손으로 머리 위 하트를 만들어주세요"))
+                .andExpect(jsonPath("$.data.attempts_used").value(0))
+                .andExpect(jsonPath("$.data.remaining_attempts").value(2))
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
         mockMvc.perform(get("/wake-requests/{id}", request.getId()).header("Authorization", bearer(sender)))
                 .andExpect(status().isOk());
@@ -308,12 +340,59 @@ class WakeRequestControllerTest {
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, first, (short) 1));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, second, (short) 2));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, receiver, (short) 3));
-        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, first, receiver, NOW.minusSeconds(1)));
+        WakeRequest existing = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, first, receiver, NOW.minusSeconds(1))
+        );
 
         wake(second, group.getId(), receiver.getId())
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.status").value("SENT"));
         assertThat(wakeRequestRepository.findAllByWakeGroupId(group.getId())).hasSize(2);
+        assertThat(dailyPoseRepository.countByWakeGroupIdAndPoseDate(
+                group.getId(), NOW.toLocalDate())).isEqualTo(1);
+        WakeRequest created = wakeRequestRepository.findAllByWakeGroupId(group.getId()).stream()
+                .filter(request -> !request.getId().equals(existing.getId()))
+                .findFirst()
+                .orElseThrow();
+        for (WakeRequest request : java.util.List.of(existing, created)) {
+            mockMvc.perform(get("/wake-requests/{id}", request.getId())
+                            .header("Authorization", bearer(receiver)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.pose.date").value("2026-08-12"))
+                    .andExpect(jsonPath("$.data.pose.description")
+                            .value("양손으로 머리 위 하트를 만들어주세요"));
+        }
+    }
+
+    @Test
+    void reusesExistingDailyPoseForWakeRequest() throws Exception {
+        User sender = saveUser("existing-pose-sender@example.com");
+        User receiver = saveUser("existing-pose-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        DailyPose existing = dailyPoseRepository.saveAndFlush(
+                DailyPose.create(group, activePose, NOW.toLocalDate())
+        );
+
+        wake(sender, group.getId(), receiver.getId()).andExpect(status().isCreated());
+
+        assertThat(dailyPoseRepository.findAll()).singleElement()
+                .extracting(DailyPose::getId).isEqualTo(existing.getId());
+    }
+
+    @Test
+    void activePoseMissingRollsBackWakeRequestAndNotification() throws Exception {
+        User sender = saveUser("no-pose-sender@example.com");
+        User receiver = saveUser("no-pose-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        poseRepository.deleteAllInBatch();
+
+        wake(sender, group.getId(), receiver.getId())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ACTIVE_POSE_NOT_FOUND"));
+
+        assertThat(wakeRequestRepository.count()).isZero();
+        assertThat(dailyPoseRepository.count()).isZero();
+        assertThat(notificationRepository.count()).isZero();
     }
 
     private void clearData() {
@@ -321,8 +400,10 @@ class WakeRequestControllerTest {
         dndWindowRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
+        dailyPoseRepository.deleteAllInBatch();
         wakeGroupMemberRepository.deleteAllInBatch();
         wakeGroupRepository.deleteAllInBatch();
+        poseRepository.deleteAllInBatch();
         sleepFeedbackRepository.deleteAllInBatch();
         sleepSessionRepository.deleteAllInBatch();
         deviceRepository.deleteAllInBatch();

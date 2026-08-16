@@ -49,6 +49,12 @@ public class DailyPoseService {
                 .orElseGet(() -> createDailyPose(wakeGroup, poseDate));
     }
 
+    @Transactional(readOnly = true)
+    public DailyPose getDailyPose(Long wakeGroupId, LocalDate poseDate) {
+        return dailyPoseRepository.findByWakeGroupIdAndPoseDate(wakeGroupId, poseDate)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_POSE_NOT_FOUND));
+    }
+
     private DailyPose createDailyPose(WakeGroup wakeGroup, LocalDate poseDate) {
         List<Pose> activePoses = poseRepository.findAllByActiveTrue();
         if (activePoses.isEmpty()) {
