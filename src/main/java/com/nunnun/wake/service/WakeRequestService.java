@@ -20,6 +20,7 @@ import com.nunnun.wake.repository.WakeRequestRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class WakeRequestService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final WakeGroupRepository wakeGroupRepository;
     private final WakeGroupMemberRepository wakeGroupMemberRepository;
@@ -93,7 +96,7 @@ public class WakeRequestService {
             throw new BusinessException(ErrorCode.WAKE_BLOCKED_DND);
         }
         if (eligibility.blockReason() == WakeBlockReason.COOLDOWN) {
-            throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
+            throw new BusinessException(ErrorCode.WAKE_COOLDOWN);
         }
         dailyPoseService.getOrCreateDailyPose(groupId, now.toLocalDate());
         LocalDateTime targetWakeAt = wakeTargetSnapshotResolver.resolve(receiverId, now);
@@ -101,7 +104,11 @@ public class WakeRequestService {
                 WakeRequest.send(group, sender, receiver, now, targetWakeAt)
         );
         notificationService.createWakeRequest(request);
-        return new CreateWakeRequestResponse(request.getId(), request.getStatus(), request.getRequestedAt());
+        return new CreateWakeRequestResponse(
+                request.getId(),
+                request.getStatus(),
+                request.getRequestedAt().atZone(BUSINESS_ZONE).toOffsetDateTime()
+        );
     }
 
     @Transactional

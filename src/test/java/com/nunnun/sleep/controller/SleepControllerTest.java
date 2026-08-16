@@ -89,8 +89,9 @@ class SleepControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sleep_session_id").isNumber())
-                .andExpect(jsonPath("$.data.started_at").value("2026-08-12T23:40:00"))
+                .andExpect(jsonPath("$.data.started_at").value("2026-08-12T23:40:00+09:00"))
                 .andExpect(jsonPath("$.data.bedtime_reminders_cancelled").value(false))
+                .andExpect(jsonPath("$.data.length()").value(3))
                 .andExpect(jsonPath("$.data.sleep_date").doesNotExist())
                 .andExpect(jsonPath("$.data.userId").doesNotExist())
                 .andExpect(jsonPath("$.data.password").doesNotExist())
@@ -114,7 +115,7 @@ class SleepControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"source\":\"NOTIFICATION\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.started_at").value("2026-08-12T23:40:00"));
+                .andExpect(jsonPath("$.data.started_at").value("2026-08-12T23:40:00+09:00"));
 
         assertThat(sleepSessionRepository.findAll())
                 .singleElement()

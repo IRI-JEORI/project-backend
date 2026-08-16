@@ -14,6 +14,8 @@ import com.nunnun.wake.repository.WakeProofRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ public class WakeProofPersistenceService {
 
     private static final int MAX_ATTEMPTS = 2;
     private static final int SUCCESS_THRESHOLD = 70;
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final WakeRequestRepository wakeRequestRepository;
     private final WakeProofRepository wakeProofRepository;
@@ -76,7 +79,9 @@ public class WakeProofPersistenceService {
                 .orElseGet(() -> WakeProof.record(request, retainedObjectKey, score, result, submittedAt));
         wakeProofRepository.saveAndFlush(proof);
         short attemptNo = request.recordProofResult(result == PoseMatchResult.SUCCESS);
-        int remainingAttempts = Math.max(0, MAX_ATTEMPTS - attemptNo);
+        int remainingAttempts = result == PoseMatchResult.SUCCESS
+                ? 0
+                : Math.max(0, MAX_ATTEMPTS - attemptNo);
         boolean canRetry = result == PoseMatchResult.FAIL && request.canBeVerified() && remainingAttempts > 0;
         LocalDateTime verifiedAt = proof.getVerifiedAt();
         return new CreateWakeProofResponse(
@@ -87,10 +92,14 @@ public class WakeProofPersistenceService {
                 request.getStatus(),
                 canRetry,
                 remainingAttempts,
-                verifiedAt,
-                verifiedAt == null ? null : verifiedAt.plusMinutes(30),
-                proof.getExpiresAt()
+                atBusinessOffset(verifiedAt),
+                atBusinessOffset(verifiedAt == null ? null : verifiedAt.plusMinutes(30)),
+                atBusinessOffset(proof.getExpiresAt())
         );
+    }
+
+    private OffsetDateTime atBusinessOffset(LocalDateTime value) {
+        return value == null ? null : value.atZone(BUSINESS_ZONE).toOffsetDateTime();
     }
 
     private void validateReceiverAndAttempt(WakeRequest request, Long userId) {
