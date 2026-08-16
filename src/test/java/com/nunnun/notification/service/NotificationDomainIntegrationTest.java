@@ -23,6 +23,9 @@ import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeGroupMember;
+import com.nunnun.wake.entity.Pose;
+import com.nunnun.wake.repository.DailyPoseRepository;
+import com.nunnun.wake.repository.PoseRepository;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
@@ -89,6 +92,12 @@ class NotificationDomainIntegrationTest {
     private WakeRequestRepository wakeRequests;
 
     @Autowired
+    private DailyPoseRepository dailyPoses;
+
+    @Autowired
+    private PoseRepository poses;
+
+    @Autowired
     private WakeGroupMemberRepository wakeMembers;
 
     @Autowired
@@ -130,8 +139,10 @@ class NotificationDomainIntegrationTest {
         notifications.deleteAllInBatch();
         wakeProofs.deleteAllInBatch();
         wakeRequests.deleteAllInBatch();
+        dailyPoses.deleteAllInBatch();
         wakeMembers.deleteAllInBatch();
         wakeGroups.deleteAllInBatch();
+        poses.deleteAllInBatch();
         sleepFeedbacks.deleteAllInBatch();
         sleepSessions.deleteAllInBatch();
         routines.deleteAllInBatch();
@@ -176,6 +187,14 @@ class NotificationDomainIntegrationTest {
                         group,
                         receiver,
                         (short) 2
+                )
+        );
+
+        poses.saveAndFlush(
+                Pose.create(
+                        "NOTIFICATION_TEST_POSE",
+                        "test/notification-pose.png",
+                        "notification test pose"
                 )
         );
 
