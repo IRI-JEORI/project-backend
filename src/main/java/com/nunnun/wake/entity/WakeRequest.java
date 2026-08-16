@@ -51,6 +51,9 @@ public class WakeRequest {
     @Column(name = "requested_at", nullable = false)
     private LocalDateTime requestedAt;
 
+    @Column(name = "target_wake_at")
+    private LocalDateTime targetWakeAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -58,17 +61,34 @@ public class WakeRequest {
     protected WakeRequest() {
     }
 
-    private WakeRequest(WakeGroup wakeGroup, User sender, User receiver, LocalDateTime requestedAt) {
+    private WakeRequest(
+            WakeGroup wakeGroup,
+            User sender,
+            User receiver,
+            LocalDateTime requestedAt,
+            LocalDateTime targetWakeAt
+    ) {
         this.wakeGroup = Objects.requireNonNull(wakeGroup);
         this.sender = Objects.requireNonNull(sender);
         this.receiver = Objects.requireNonNull(receiver);
         this.status = WakeRequestStatus.SENT;
         this.attemptCount = (short) 0;
         this.requestedAt = Objects.requireNonNull(requestedAt);
+        this.targetWakeAt = targetWakeAt;
     }
 
     public static WakeRequest send(WakeGroup wakeGroup, User sender, User receiver, LocalDateTime requestedAt) {
-        return new WakeRequest(wakeGroup, sender, receiver, requestedAt);
+        return new WakeRequest(wakeGroup, sender, receiver, requestedAt, null);
+    }
+
+    public static WakeRequest send(
+            WakeGroup wakeGroup,
+            User sender,
+            User receiver,
+            LocalDateTime requestedAt,
+            LocalDateTime targetWakeAt
+    ) {
+        return new WakeRequest(wakeGroup, sender, receiver, requestedAt, targetWakeAt);
     }
 
     public boolean canBeVerified() {
@@ -99,5 +119,6 @@ public class WakeRequest {
     public WakeRequestStatus getStatus() { return status; }
     public Short getAttemptCount() { return attemptCount; }
     public LocalDateTime getRequestedAt() { return requestedAt; }
+    public LocalDateTime getTargetWakeAt() { return targetWakeAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

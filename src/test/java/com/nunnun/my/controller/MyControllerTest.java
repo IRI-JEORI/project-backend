@@ -14,6 +14,8 @@ import com.nunnun.global.security.jwt.JwtTokenProvider;
 import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.routine.entity.DailyRoutine;
 import com.nunnun.routine.repository.DailyRoutineRepository;
+import com.nunnun.routine.entity.WeeklyWakeTarget;
+import com.nunnun.routine.repository.WeeklyWakeTargetRepository;
 import com.nunnun.schedule.entity.FixedSchedule;
 import com.nunnun.schedule.repository.FixedScheduleRepository;
 import com.nunnun.user.entity.User;
@@ -85,6 +87,9 @@ class MyControllerTest {
     private UserRepository userRepository;
 
     @Autowired
+    private WeeklyWakeTargetRepository weeklyWakeTargetRepository;
+
+    @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
     @Autowired
@@ -97,6 +102,7 @@ class MyControllerTest {
         fixedScheduleRepository.deleteAllInBatch();
         deviceRepository.deleteAllInBatch();
         refreshTokenRepository.deleteAllInBatch();
+        weeklyWakeTargetRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
     }
 
@@ -255,7 +261,9 @@ class MyControllerTest {
                 .andExpect(
                         jsonPath("$.data.fixedSchedules")
                                 .isEmpty()
-                );
+                )
+                .andExpect(jsonPath("$.data.resolved_target_wake_time").value(nullValue()))
+                .andExpect(jsonPath("$.data.next_target_at").value(nullValue()));
 
         assertThat(
                 dailyRoutineRepository
@@ -264,6 +272,51 @@ class MyControllerTest {
                                 TODAY
                         )
         ).isEmpty();
+    }
+
+    @Test
+    void resolvesTodayAndNextWakeTargetsFromWeeklyTargets() throws Exception {
+        User user = saveUser("weekly-today@example.com");
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                user, DayOfWeek.WEDNESDAY, LocalTime.of(7, 30)
+        ));
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                user, DayOfWeek.THURSDAY, LocalTime.of(6, 45)
+        ));
+
+        mockMvc.perform(get("/me/today").header("Authorization", bearerTokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.resolved_target_wake_time").value("07:30"))
+                .andExpect(jsonPath("$.data.next_target_at").value("2026-08-13T06:45:00+09:00"));
+    }
+
+    @Test
+    void doesNotUseLegacyRoutineWakeTimeAsResolvedTarget() throws Exception {
+        User user = saveUser("legacy-wake@example.com");
+        DailyRoutine routine = dailyRoutineRepository.saveAndFlush(DailyRoutine.create(user, TODAY));
+        routine.changeTargetWakeTime(LocalTime.of(8, 0));
+
+        mockMvc.perform(get("/me/today").header("Authorization", bearerTokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.targetWakeTime").value("08:00:00"))
+                .andExpect(jsonPath("$.data.resolved_target_wake_time").value(nullValue()))
+                .andExpect(jsonPath("$.data.next_target_at").value(nullValue()));
+    }
+
+    @Test
+    void skipsTargetAtTheExactCurrentTimeWhenResolvingNextTarget() throws Exception {
+        User user = saveUser("exact-boundary@example.com");
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                user, DayOfWeek.WEDNESDAY, LocalTime.of(9, 15)
+        ));
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                user, DayOfWeek.THURSDAY, LocalTime.of(6, 0)
+        ));
+
+        mockMvc.perform(get("/me/today").header("Authorization", bearerTokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.resolved_target_wake_time").value("09:15"))
+                .andExpect(jsonPath("$.data.next_target_at").value("2026-08-13T06:00:00+09:00"));
     }
 
     @Test
