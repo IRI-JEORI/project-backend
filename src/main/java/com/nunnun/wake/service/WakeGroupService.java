@@ -35,6 +35,7 @@ public class WakeGroupService {
     private final WakeGroupLifecycleService lifecycleService;
     private final UserWriteGuard userWriteGuard;
     private final UserRepository userRepository;
+    private final WakeGroupCardService wakeGroupCardService;
 
     public WakeGroupService(
             WakeGroupRepository wakeGroupRepository,
@@ -42,7 +43,8 @@ public class WakeGroupService {
             InviteCodeGenerator inviteCodeGenerator,
             WakeGroupLifecycleService lifecycleService,
             UserWriteGuard userWriteGuard,
-            UserRepository userRepository
+            UserRepository userRepository,
+            WakeGroupCardService wakeGroupCardService
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
@@ -50,6 +52,7 @@ public class WakeGroupService {
         this.lifecycleService = lifecycleService;
         this.userWriteGuard = userWriteGuard;
         this.userRepository = userRepository;
+        this.wakeGroupCardService = wakeGroupCardService;
     }
 
     @Transactional
@@ -98,10 +101,13 @@ public class WakeGroupService {
         WakeGroup group = wakeGroupRepository.findById(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
         ensureMember(groupId, userId);
-        List<WakeGroupMemberResponse> members = wakeGroupMemberRepository
-                .findAllByWakeGroupIdOrderBySlotNoAsc(groupId).stream()
-                .map(member -> WakeGroupMemberResponse.from(member, userId))
-                .toList();
+        List<WakeGroupMember> groupMembers = wakeGroupMemberRepository
+                .findAllByWakeGroupIdOrderBySlotNoAsc(groupId);
+        List<WakeGroupMemberResponse> members = wakeGroupCardService.createCards(
+                groupId,
+                userId,
+                groupMembers
+        );
         return new WakeGroupDetailResponse(
                 group.getId(),
                 group.getName(),

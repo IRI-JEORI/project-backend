@@ -6,12 +6,14 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> {
 
+    @EntityGraph(attributePaths = "receiver")
     List<WakeRequest> findAllByWakeGroupId(Long wakeGroupId);
 
     @Query("select request from WakeRequest request join fetch request.sender join fetch request.receiver where request.id = :id")
@@ -30,5 +32,14 @@ public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> 
             @Param("receiverId") Long receiverId,
             @Param("cooldownStartedAt") LocalDateTime cooldownStartedAt
     );
+
+    @Query("""
+            select max(proof.verifiedAt)
+            from WakeProof proof join proof.wakeRequest request
+            where request.receiver.id = :receiverId
+              and request.status = com.nunnun.wake.entity.WakeRequestStatus.VERIFIED
+              and proof.poseMatchResult = com.nunnun.wake.entity.PoseMatchResult.SUCCESS
+            """)
+    LocalDateTime findLatestVerifiedAtByReceiverId(@Param("receiverId") Long receiverId);
 
 }

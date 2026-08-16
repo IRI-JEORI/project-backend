@@ -10,6 +10,7 @@ import com.nunnun.user.service.UserWriteGuard;
 import com.nunnun.wake.dto.CreateWakeRequestResponse;
 import com.nunnun.wake.dto.CreateSelfVerifyResponse;
 import com.nunnun.wake.dto.WakeRequestDetailResponse;
+import com.nunnun.wake.dto.WakeBlockReason;
 import com.nunnun.wake.entity.DailyPose;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeRequest;
@@ -36,6 +37,7 @@ public class WakeRequestService {
     private final DndWindowService dndWindowService;
     private final UserWriteGuard userWriteGuard;
     private final DailyPoseService dailyPoseService;
+    private final WakeEligibilityPolicy wakeEligibilityPolicy;
 
     public WakeRequestService(
             WakeGroupRepository wakeGroupRepository,
@@ -46,7 +48,8 @@ public class WakeRequestService {
             NotificationService notificationService,
             DndWindowService dndWindowService,
             UserWriteGuard userWriteGuard,
-            DailyPoseService dailyPoseService
+            DailyPoseService dailyPoseService,
+            WakeEligibilityPolicy wakeEligibilityPolicy
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
@@ -57,6 +60,7 @@ public class WakeRequestService {
         this.dndWindowService = dndWindowService;
         this.userWriteGuard = userWriteGuard;
         this.dailyPoseService = dailyPoseService;
+        this.wakeEligibilityPolicy = wakeEligibilityPolicy;
     }
 
     @Transactional
@@ -75,11 +79,17 @@ public class WakeRequestService {
         if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, receiverId)) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_RECEIVER_NOT_MEMBER);
         }
-        if (dndWindowService.isDndActive(receiverId, ZonedDateTime.now(clock))) {
+        boolean dndActive = dndWindowService.isDndActive(receiverId, ZonedDateTime.now(clock));
+        LocalDateTime now = LocalDateTime.now(clock);
+        WakeEligibilityPolicy.Result eligibility = wakeEligibilityPolicy.evaluate(
+                dndActive,
+                wakeRequestRepository.findLatestVerifiedAtByReceiverId(receiverId),
+                now
+        );
+        if (eligibility.blockReason() == WakeBlockReason.DND) {
             throw new BusinessException(ErrorCode.WAKE_BLOCKED_DND);
         }
-        LocalDateTime now = LocalDateTime.now(clock);
-        if (wakeRequestRepository.existsRecentVerifiedProofByReceiverId(receiverId, now.minusMinutes(30))) {
+        if (eligibility.blockReason() == WakeBlockReason.COOLDOWN) {
             throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
         }
         dailyPoseService.getOrCreateDailyPose(groupId, now.toLocalDate());

@@ -3,6 +3,7 @@ package com.nunnun.wake.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -17,7 +18,11 @@ import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
 import com.nunnun.notification.entity.Notification;
 import com.nunnun.notification.entity.NotificationType;
+import com.nunnun.notification.entity.DndWindow;
+import com.nunnun.notification.repository.DndWindowRepository;
 import com.nunnun.notification.repository.NotificationRepository;
+import com.nunnun.routine.entity.WeeklyWakeTarget;
+import com.nunnun.routine.repository.WeeklyWakeTargetRepository;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.entity.WakeGroup;
@@ -30,25 +35,38 @@ import com.nunnun.wake.repository.WakeProofRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
-import java.util.List;
+import java.time.Clock;
+import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(WakeGroupControllerTest.FixedClockConfiguration.class)
 class WakeGroupControllerTest {
+
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 17, 9, 0);
 
     @Autowired private MockMvc mockMvc;
     @Autowired private WakeGroupRepository wakeGroupRepository;
@@ -56,6 +74,8 @@ class WakeGroupControllerTest {
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
     @Autowired private NotificationRepository notificationRepository;
+    @Autowired private DndWindowRepository dndWindowRepository;
+    @Autowired private WeeklyWakeTargetRepository weeklyWakeTargetRepository;
     @Autowired private SleepFeedbackRepository sleepFeedbackRepository;
     @Autowired private SleepSessionRepository sleepSessionRepository;
     @Autowired private DeviceRepository deviceRepository;
@@ -213,12 +233,14 @@ class WakeGroupControllerTest {
     }
 
     @Test
-    void returnsMemberDetailInSlotOrderWithoutWakeCardState() throws Exception {
+    void returnsMemberGroupCardsInSlotOrderUsingExactApiContract() throws Exception {
         User creator = saveUser("detail-creator@example.com");
         User member = saveUser("detail-member@example.com");
         User outsider = saveUser("detail-outsider@example.com");
         WakeGroup group = createGroup(creator, "DET001");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 3));
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                creator, DayOfWeek.MONDAY, LocalTime.of(10, 1)));
 
         mockMvc.perform(get("/wake-groups/{id}", group.getId())
                         .header("Authorization", bearerTokenFor(member)))
@@ -229,18 +251,112 @@ class WakeGroupControllerTest {
                 .andExpect(jsonPath("$.data.capacity").value(4))
                 .andExpect(jsonPath("$.data.current_members").value(2))
                 .andExpect(jsonPath("$.data.members[0].user_id").value(creator.getId()))
-                .andExpect(jsonPath("$.data.members[0].slot").value(1))
                 .andExpect(jsonPath("$.data.members[0].is_me").value(false))
+                .andExpect(jsonPath("$.data.members[0].target_wake_time").value("10:01"))
+                .andExpect(jsonPath("$.data.members[0].next_target_at").value("2026-08-17T10:01:00+09:00"))
+                .andExpect(jsonPath("$.data.members[0].remaining_to_target.value").value(2))
+                .andExpect(jsonPath("$.data.members[0].remaining_to_target.unit").value("HOUR"))
+                .andExpect(jsonPath("$.data.members[0].state").value("NORMAL"))
+                .andExpect(jsonPath("$.data.members[0].actual_wake_time").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[0].proof_image_url").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[0].proof_expires_at").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[0].can_wake").value(true))
+                .andExpect(jsonPath("$.data.members[0].block_reason").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[0].wake_available_at").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.members[1].user_id").value(member.getId()))
-                .andExpect(jsonPath("$.data.members[1].slot").value(3))
                 .andExpect(jsonPath("$.data.members[1].is_me").value(true))
-                .andExpect(jsonPath("$.data.members[0].state").doesNotExist())
-                .andExpect(jsonPath("$.data.members[0].can_wake").doesNotExist());
+                .andExpect(jsonPath("$.data.members[1].target_wake_time").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[1].next_target_at").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[1].remaining_to_target").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[1].state").value("NORMAL"))
+                .andExpect(jsonPath("$.data.members[0].slot").doesNotExist());
 
         mockMvc.perform(get("/wake-groups/{id}", group.getId())
                         .header("Authorization", bearerTokenFor(outsider)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ACCESS_DENIED"));
+    }
+
+    @Test
+    void keepsSuccessfulCardAwakeAfterTargetAndExposesCooldownAndProofUrl() throws Exception {
+        User creator = saveUser("card-creator@example.com");
+        User member = saveUser("card-member@example.com");
+        WakeGroup group = createGroup(creator, "CARD01");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 2));
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                member, DayOfWeek.MONDAY, LocalTime.of(7, 30)));
+        WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(
+                group, creator, member, NOW.minusMinutes(20)));
+        request.verify();
+        wakeRequestRepository.saveAndFlush(request);
+        wakeProofRepository.saveAndFlush(WakeProof.verify(
+                request, "wake-proofs/card.jpg", NOW.minusMinutes(10)));
+        when(wakeProofStorage.createReadUrl(org.mockito.ArgumentMatchers.eq("wake-proofs/card.jpg"),
+                org.mockito.ArgumentMatchers.any())).thenReturn("https://signed.example/card");
+
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[1].state").value("AWAKE"))
+                .andExpect(jsonPath("$.data.members[1].actual_wake_time").value("08:50"))
+                .andExpect(jsonPath("$.data.members[1].proof_image_url").value("https://signed.example/card"))
+                .andExpect(jsonPath("$.data.members[1].proof_expires_at")
+                        .value("2026-08-17T16:50:00+09:00"))
+                .andExpect(jsonPath("$.data.members[1].can_wake").value(false))
+                .andExpect(jsonPath("$.data.members[1].block_reason").value("COOLDOWN"))
+                .andExpect(jsonPath("$.data.members[1].wake_available_at")
+                        .value("2026-08-17T09:20:00+09:00"));
+
+        when(wakeProofStorage.createReadUrl(org.mockito.ArgumentMatchers.eq("wake-proofs/card.jpg"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new WakeProofStorageException("storage disabled"));
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[1].state").value("AWAKE"))
+                .andExpect(jsonPath("$.data.members[1].proof_image_url")
+                        .value(org.hamcrest.Matchers.nullValue()));
+
+        WakeProof cleanedProof = wakeProofRepository.findByWakeRequestId(request.getId()).orElseThrow();
+        cleanedProof.clearImageObjectKey();
+        wakeProofRepository.saveAndFlush(cleanedProof);
+
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[1].state").value("AWAKE"))
+                .andExpect(jsonPath("$.data.members[1].actual_wake_time").value("08:50"))
+                .andExpect(jsonPath("$.data.members[1].proof_image_url").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[1].proof_expires_at")
+                        .value("2026-08-17T16:50:00+09:00"));
+    }
+
+    @Test
+    void dndBlocksWakeButTargetAndExistingSentRequestDoNot() throws Exception {
+        User creator = saveUser("dnd-card-creator@example.com");
+        User member = saveUser("dnd-card-member@example.com");
+        WakeGroup group = createGroup(creator, "DND001");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 2));
+        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, creator, member, NOW.minusMinutes(1)));
+        dndWindowRepository.saveAndFlush(DndWindow.create(
+                member, DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(10, 0)));
+
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[1].target_wake_time")
+                        .value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.members[1].state").value("NORMAL"))
+                .andExpect(jsonPath("$.data.members[1].can_wake").value(false))
+                .andExpect(jsonPath("$.data.members[1].block_reason").value("DND"))
+                .andExpect(jsonPath("$.data.members[1].wake_available_at")
+                        .value(org.hamcrest.Matchers.nullValue()));
+
+        dndWindowRepository.deleteAllInBatch();
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[1].can_wake").value(true));
     }
 
     @Test
@@ -446,8 +562,10 @@ class WakeGroupControllerTest {
 
     private void clearData() {
         notificationRepository.deleteAllInBatch();
+        dndWindowRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
+        weeklyWakeTargetRepository.deleteAllInBatch();
         wakeGroupMemberRepository.deleteAllInBatch();
         wakeGroupRepository.deleteAllInBatch();
         sleepFeedbackRepository.deleteAllInBatch();
@@ -490,5 +608,14 @@ class WakeGroupControllerTest {
 
     private String bearerTokenFor(User user) {
         return "Bearer " + jwtTokenProvider.createAccessToken(user.getId()).token();
+    }
+
+    @TestConfiguration
+    static class FixedClockConfiguration {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
+        }
     }
 }
