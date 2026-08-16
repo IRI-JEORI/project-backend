@@ -58,6 +58,10 @@ public class WakeGroup {
         return new WakeGroup(name, inviteCode, creator);
     }
 
+    public void rename(String name) {
+        this.name = Objects.requireNonNull(name);
+    }
+
     public Long getId() {
         return id;
     }

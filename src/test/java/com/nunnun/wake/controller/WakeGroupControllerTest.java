@@ -1,11 +1,11 @@
 package com.nunnun.wake.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -37,7 +37,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -87,14 +86,24 @@ class WakeGroupControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.name").value("Jeju Trip"))
-                .andExpect(jsonPath("$.data.inviteCode").doesNotExist());
+                .andExpect(jsonPath("$.data.invite_code").isString())
+                .andExpect(jsonPath("$.data.capacity").value(4))
+                .andExpect(jsonPath("$.data.current_members").value(1));
 
         WakeGroup group = wakeGroupRepository.findAll().getFirst();
         WakeGroupMember member = wakeGroupMemberRepository.findAll().getFirst();
         assertThat(group.getCreator().getId()).isEqualTo(creator.getId());
+        assertThat(group.getCapacity()).isEqualTo((short) 4);
         assertThat(group.getInviteCode()).hasSize(6).matches("[A-Z0-9]+");
         assertThat(member.getUser().getId()).isEqualTo(creator.getId());
         assertThat(member.getSlotNo()).isEqualTo((short) 1);
+
+        mockMvc.perform(post("/wake-groups")
+                        .header("Authorization", bearerTokenFor(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Second Group\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAKE_GROUP_EXISTS"));
     }
 
     @Test
@@ -127,7 +136,7 @@ class WakeGroupControllerTest {
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"JOIN01\"}"))
+                        .content("{\"invite_code\":\"JOIN01\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.id").value(group.getId()));
 
@@ -139,19 +148,19 @@ class WakeGroupControllerTest {
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"JOIN01\"}"))
+                        .content("{\"invite_code\":\"JOIN01\"}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ALREADY_JOINED"));
+                .andExpect(jsonPath("$.error.code").value("ALREADY_MEMBER"));
         mockMvc.perform(post("/wake-groups/join")
                         .header("Authorization", bearerTokenFor(joiner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"UNKNOWN\"}"))
+                        .content("{\"invite_code\":\"BAD001\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_NOT_FOUND"));
     }
 
     @Test
-    void assignsLowestUnusedSlotAndEnforcesEightSlotDatabaseLimit() throws Exception {
+    void assignsLowestUnusedSlotWithinCapacityAndRejectsFifthMember() throws Exception {
         User creator = saveUser("creator@example.com");
         WakeGroup group = createGroup(creator, "SLOT01");
         User slotTwo = saveUser("slot-two@example.com");
@@ -166,36 +175,156 @@ class WakeGroupControllerTest {
                 .extracting(WakeGroupMember::getSlotNo)
                 .isEqualTo((short) 3);
 
-        for (short slotNo = 5; slotNo <= 8; slotNo++) {
-            User user = saveUser("slot-" + slotNo + "@example.com");
-            wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, user, slotNo));
-        }
-        User ninthUser = saveUser("ninth@example.com");
-
-        assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
-                WakeGroupMember.join(group, ninthUser, (short) 9)
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        User fifthUser = saveUser("fifth@example.com");
+        join(fifthUser, group.getInviteCode())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_FULL"));
+        assertThat(wakeGroupMemberRepository.findAllByWakeGroupId(group.getId()))
+                .hasSize(4)
+                .extracting(WakeGroupMember::getSlotNo)
+                .containsExactlyInAnyOrder((short) 1, (short) 2, (short) 3, (short) 4);
     }
 
     @Test
     void returnsInviteCodeOnlyToMembersAndHandlesUnknownGroup() throws Exception {
         User creator = saveUser("creator@example.com");
+        User member = saveUser("member@example.com");
         User outsider = saveUser("outsider@example.com");
         WakeGroup group = createGroup(creator, "INV001");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 2));
 
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").value("INV001"))
+                .andExpect(jsonPath("$.data.invite_code").value("INV001"))
                 .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
+        mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
+                        .header("Authorization", bearerTokenFor(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.invite_code").value("INV001"));
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(outsider)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ACCESS_DENIED"));
         mockMvc.perform(get("/wake-groups/{id}/invite-code", 999999L)
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_NOT_FOUND"));
+    }
+
+    @Test
+    void returnsMemberDetailInSlotOrderWithoutWakeCardState() throws Exception {
+        User creator = saveUser("detail-creator@example.com");
+        User member = saveUser("detail-member@example.com");
+        User outsider = saveUser("detail-outsider@example.com");
+        WakeGroup group = createGroup(creator, "DET001");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 3));
+
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(group.getId()))
+                .andExpect(jsonPath("$.data.name").value("Wake Group"))
+                .andExpect(jsonPath("$.data.invite_code").value("DET001"))
+                .andExpect(jsonPath("$.data.capacity").value(4))
+                .andExpect(jsonPath("$.data.current_members").value(2))
+                .andExpect(jsonPath("$.data.members[0].user_id").value(creator.getId()))
+                .andExpect(jsonPath("$.data.members[0].slot").value(1))
+                .andExpect(jsonPath("$.data.members[0].is_me").value(false))
+                .andExpect(jsonPath("$.data.members[1].user_id").value(member.getId()))
+                .andExpect(jsonPath("$.data.members[1].slot").value(3))
+                .andExpect(jsonPath("$.data.members[1].is_me").value(true))
+                .andExpect(jsonPath("$.data.members[0].state").doesNotExist())
+                .andExpect(jsonPath("$.data.members[0].can_wake").doesNotExist());
+
+        mockMvc.perform(get("/wake-groups/{id}", group.getId())
+                        .header("Authorization", bearerTokenFor(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ACCESS_DENIED"));
+    }
+
+    @Test
+    void allowsAnyMemberToRenameButRejectsNonMember() throws Exception {
+        User creator = saveUser("rename-creator@example.com");
+        User member = saveUser("rename-member@example.com");
+        User outsider = saveUser("rename-outsider@example.com");
+        WakeGroup group = createGroup(creator, "REN001");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, member, (short) 2));
+
+        rename(creator, group, "Creator Rename")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("Creator Rename"));
+        rename(member, group, "Member Rename")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("Member Rename"));
+        rename(outsider, group, "Denied")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ACCESS_DENIED"));
+        rename(member, group, " ")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+        assertThat(wakeGroupRepository.findById(group.getId()).orElseThrow().getName())
+                .isEqualTo("Member Rename");
+    }
+
+    @Test
+    void previewsWithoutJoiningAndReturnsAllSpecifiedFailureReasons() throws Exception {
+        User creator = saveUser("preview-creator@example.com");
+        User outsider = saveUser("preview-outsider@example.com");
+        User otherMember = saveUser("preview-other@example.com");
+        WakeGroup target = createGroup(creator, "PRE001");
+        WakeGroup other = createGroup(otherMember, "PRE002");
+
+        preview(outsider, "PRE001")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.valid").value(true))
+                .andExpect(jsonPath("$.data.reason").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.group_name").value("Wake Group"))
+                .andExpect(jsonPath("$.data.current_members").value(1))
+                .andExpect(jsonPath("$.data.capacity").value(4));
+        assertThat(wakeGroupMemberRepository.findByUserId(outsider.getId())).isEmpty();
+
+        preview(outsider, "BAD001")
+                .andExpect(jsonPath("$.data.valid").value(false))
+                .andExpect(jsonPath("$.data.reason").value("INVALID_CODE"));
+        preview(creator, "PRE001")
+                .andExpect(jsonPath("$.data.reason").value("ALREADY_MEMBER"));
+        preview(otherMember, "PRE001")
+                .andExpect(jsonPath("$.data.reason").value("ALREADY_IN_WAKE_GROUP"));
+
+        User slotTwo = saveUser("preview-slot2@example.com");
+        User slotThree = saveUser("preview-slot3@example.com");
+        User slotFour = saveUser("preview-slot4@example.com");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(target, slotTwo, (short) 2));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(target, slotThree, (short) 3));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(target, slotFour, (short) 4));
+        preview(outsider, "PRE001")
+                .andExpect(jsonPath("$.data.reason").value("GROUP_FULL"));
+        assertThat(wakeGroupRepository.findById(other.getId())).isPresent();
+    }
+
+    @Test
+    void rejectsJoiningAnotherGroupWhenMembershipAlreadyExists() throws Exception {
+        User firstCreator = saveUser("first-creator@example.com");
+        User secondCreator = saveUser("second-creator@example.com");
+        WakeGroup first = createGroup(firstCreator, "ONE001");
+        WakeGroup second = createGroup(secondCreator, "TWO001");
+
+        join(firstCreator, second.getInviteCode())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAKE_GROUP_EXISTS"));
+        mockMvc.perform(post("/wake-groups")
+                        .header("Authorization", bearerTokenFor(firstCreator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Third\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAKE_GROUP_EXISTS"));
+
+        assertThat(wakeGroupMemberRepository.findByUserId(firstCreator.getId()))
+                .get()
+                .extracting(member -> member.getWakeGroup().getId())
+                .isEqualTo(first.getId());
     }
 
     @Test
@@ -241,7 +370,7 @@ class WakeGroupControllerTest {
         mockMvc.perform(get("/wake-groups/{id}/invite-code", group.getId())
                         .header("Authorization", bearerTokenFor(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.inviteCode").value("8G3FE2"))
+                .andExpect(jsonPath("$.data.invite_code").value("8G3FE2"))
                 .andExpect(jsonPath("$.data.expiresAt").doesNotExist());
 
         assertThat(wakeGroupRepository.findById(group.getId()).orElseThrow().getInviteCode()).isEqualTo("8G3FE2");
@@ -338,7 +467,21 @@ class WakeGroupControllerTest {
         return mockMvc.perform(post("/wake-groups/join")
                 .header("Authorization", bearerTokenFor(user))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"inviteCode\":\"" + inviteCode + "\"}"));
+                .content("{\"invite_code\":\"" + inviteCode + "\"}"));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions preview(User user, String inviteCode) throws Exception {
+        return mockMvc.perform(get("/wake-groups/preview")
+                .param("code", inviteCode)
+                .header("Authorization", bearerTokenFor(user)));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions rename(User user, WakeGroup group, String name)
+            throws Exception {
+        return mockMvc.perform(patch("/wake-groups/{id}", group.getId())
+                .header("Authorization", bearerTokenFor(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"" + name + "\"}"));
     }
 
     private User saveUser(String email) {

@@ -1,4 +1,6 @@
 package com.nunnun.wake.dto;
 
-public record InviteCodeResponse(String inviteCode) {
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+public record InviteCodeResponse(@JsonProperty("invite_code") String inviteCode) {
 }
