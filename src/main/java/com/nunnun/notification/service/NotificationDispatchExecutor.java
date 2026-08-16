@@ -14,8 +14,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class NotificationDispatchExecutor {
@@ -24,22 +22,19 @@ public class NotificationDispatchExecutor {
     private final SleepSessionRepository sleepSessions;
     private final PushSender pushSender;
     private final DeviceRepository devices;
-    private final NotificationContinuationService continuationService;
 
     public NotificationDispatchExecutor(
             NotificationRepository notifications,
             DailyRoutineRepository routines,
             SleepSessionRepository sleepSessions,
             PushSender pushSender,
-            DeviceRepository devices,
-            NotificationContinuationService continuationService
+            DeviceRepository devices
     ) {
         this.notifications = notifications;
         this.routines = routines;
         this.sleepSessions = sleepSessions;
         this.pushSender = pushSender;
         this.devices = devices;
-        this.continuationService = continuationService;
     }
 
     /**
@@ -62,7 +57,8 @@ public class NotificationDispatchExecutor {
         }
         try {
             PushSendResult result = pushSender.send(new PushMessage(
-                    notification.getTitle(), notification.getBody(), notification.getType(), notification.getReferenceId()
+                    notification.getTitle(), notification.getBody(), notification.getType(),
+                    notification.getReferenceId(), notification.getTargetWakeAt()
             ), tokens);
             if (!result.unregisteredTokens().isEmpty()) {
                 devices.deleteAllByFcmTokenIn(result.unregisteredTokens());
@@ -76,15 +72,18 @@ public class NotificationDispatchExecutor {
                 return;
             }
             notification.markSent(now);
-            if (notification.getType() == NotificationType.BEDTIME_REMINDER) {
-                scheduleContinuationAfterCommit(notification.getId());
-            }
         } catch (RuntimeException exception) {
             notification.markFailed();
         }
     }
 
     private boolean isValidBedtimeReminder(Notification notification, LocalDateTime now) {
+        if (notification.getTargetWakeAt() != null) {
+            return now.isBefore(notification.getTargetWakeAt())
+                    && !sleepSessions.existsByUserIdAndStartedAtGreaterThanEqual(
+                    notification.getUser().getId(), notification.getScheduledAt()
+            );
+        }
         DailyRoutine routine = routines.findById(notification.getReferenceId()).orElse(null);
         if (routine == null || routine.getTargetBedTime() == null || routine.getTargetWakeTime() == null) {
             return false;
@@ -95,15 +94,6 @@ public class NotificationDispatchExecutor {
         return !sleepSessions.existsByUserIdAndStartedAtGreaterThanEqual(
                 notification.getUser().getId(), routine.getRoutineDate().atStartOfDay()
         );
-    }
-
-    private void scheduleContinuationAfterCommit(Long notificationId) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                continuationService.createNextBedtimeReminder(notificationId);
-            }
-        });
     }
 
     private LocalDateTime wakeAt(DailyRoutine routine) {

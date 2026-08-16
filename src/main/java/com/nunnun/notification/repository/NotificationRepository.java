@@ -26,22 +26,69 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     );
 
     List<Notification> findAllByUserIdAndTypeAndReferenceIdAndStatus(
-            Long userId, NotificationType type, Long referenceId, NotificationStatus status
+            Long userId,
+            NotificationType type,
+            Long referenceId,
+            NotificationStatus status
     );
 
     List<Notification> findAllByUserIdAndTypeAndStatus(
-            Long userId, NotificationType type, NotificationStatus status
+            Long userId,
+            NotificationType type,
+            NotificationStatus status
+    );
+
+    List<Notification> findAllByUserIdAndTypeAndTargetWakeAtAndStatus(
+            Long userId,
+            NotificationType type,
+            LocalDateTime targetWakeAt,
+            NotificationStatus status
+    );
+
+    Optional<Notification>
+    findFirstByUserIdAndTypeAndStatusAndTargetWakeAtAfterOrderByTargetWakeAtAscScheduledAtAsc(
+            Long userId,
+            NotificationType type,
+            NotificationStatus status,
+            LocalDateTime now
+    );
+
+    Optional<Notification> findByUserIdAndTypeAndTargetWakeAtAndScheduledAt(
+            Long userId,
+            NotificationType type,
+            LocalDateTime targetWakeAt,
+            LocalDateTime scheduledAt
     );
 
     boolean existsByUserIdAndTypeAndReferenceIdAndStatus(
-            Long userId, NotificationType type, Long referenceId, NotificationStatus status
+            Long userId,
+            NotificationType type,
+            Long referenceId,
+            NotificationStatus status
+    );
+
+    boolean existsByUserIdAndTypeAndTargetWakeAtAndScheduledAt(
+            Long userId,
+            NotificationType type,
+            LocalDateTime targetWakeAt,
+            LocalDateTime scheduledAt
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select notification from Notification notification join fetch notification.user where notification.id = :id")
+    @Query("""
+            select notification from Notification notification
+            join fetch notification.user
+            where notification.id = :id
+            """)
     Optional<Notification> findByIdForUpdate(@Param("id") Long id);
 
-    List<Notification> findAllByUserIdAndStatus(Long userId, NotificationStatus status);
+    List<Notification> findAllByUserIdAndStatus(
+            Long userId,
+            NotificationStatus status
+    );
 
-    List<Notification> findAllByTypeAndReferenceIdIn(NotificationType type, List<Long> referenceIds);
+    List<Notification> findAllByTypeAndReferenceIdIn(
+            NotificationType type,
+            List<Long> referenceIds
+    );
 }
