@@ -162,6 +162,8 @@ class WakeRequestControllerTest {
         User receiver = saveUser("receiver@example.com");
         WakeGroup group = createGroup(sender, receiver);
         WakeRequest previous = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW.minusMinutes(29)));
+        previous.verify();
+        wakeRequestRepository.saveAndFlush(previous);
         wakeProofRepository.saveAndFlush(WakeProof.verify(previous, "wake-proofs/old.jpg", NOW.minusMinutes(29)));
 
         wake(sender, group.getId(), receiver.getId()).andExpect(status().isConflict())
@@ -177,6 +179,8 @@ class WakeRequestControllerTest {
         receiver = saveUser("receiver2@example.com");
         group = createGroup(sender, receiver);
         previous = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW.minusMinutes(30)));
+        previous.verify();
+        wakeRequestRepository.saveAndFlush(previous);
         wakeProofRepository.saveAndFlush(WakeProof.verify(previous, "wake-proofs/boundary.jpg", NOW.minusMinutes(30)));
         wake(sender, group.getId(), receiver.getId()).andExpect(status().isCreated());
     }
@@ -189,6 +193,8 @@ class WakeRequestControllerTest {
         WakeRequest previous = wakeRequestRepository.saveAndFlush(
                 WakeRequest.send(group, sender, receiver, NOW.minusMinutes(10))
         );
+        previous.verify();
+        wakeRequestRepository.saveAndFlush(previous);
         wakeProofRepository.saveAndFlush(
                 WakeProof.verify(previous, "wake-proofs/dnd-priority.jpg", NOW.minusMinutes(10))
         );
@@ -592,6 +598,8 @@ class WakeRequestControllerTest {
         WakeRequest previous = wakeRequestRepository.saveAndFlush(
                 WakeRequest.send(group, user, user, NOW.minusMinutes(10))
         );
+        previous.verify();
+        wakeRequestRepository.saveAndFlush(previous);
         wakeProofRepository.saveAndFlush(
                 WakeProof.verify(previous, "wake-proofs/self-cooldown.jpg", NOW.minusMinutes(10))
         );

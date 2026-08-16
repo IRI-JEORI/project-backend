@@ -10,7 +10,10 @@ import com.nunnun.user.service.UserWriteGuard;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Comparator;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -94,6 +97,21 @@ public class DndWindowService {
                         !seoulNow.toLocalTime().isBefore(window.getStartTime())
                                 && seoulNow.toLocalTime().isBefore(window.getEndTime())
                 );
+    }
+
+    @Transactional(readOnly = true)
+    public Set<Long> findDndActiveUserIds(Collection<Long> userIds, ZonedDateTime now) {
+        if (userIds.isEmpty()) {
+            return Set.of();
+        }
+        ZonedDateTime seoulNow = now.withZoneSameInstant(BUSINESS_ZONE);
+        return dndWindows.findAllByUserIdInAndDayOfWeek(userIds, seoulNow.getDayOfWeek()).stream()
+                .filter(window ->
+                        !seoulNow.toLocalTime().isBefore(window.getStartTime())
+                                && seoulNow.toLocalTime().isBefore(window.getEndTime())
+                )
+                .map(window -> window.getUser().getId())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private User findActiveUser(Long userId) {
