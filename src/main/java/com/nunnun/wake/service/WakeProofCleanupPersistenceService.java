@@ -1,6 +1,7 @@
 package com.nunnun.wake.service;
 
 import com.nunnun.wake.entity.WakeProof;
+import com.nunnun.wake.entity.PoseMatchResult;
 import com.nunnun.wake.repository.WakeProofRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -19,11 +20,16 @@ public class WakeProofCleanupPersistenceService {
     }
 
     @Transactional
-    public void deleteExpiredProof(Long proofId) {
+    public void clearExpiredImageObjectKey(Long proofId, String expectedObjectKey) {
         WakeProof proof = wakeProofRepository.findById(proofId).orElse(null);
-        if (proof == null || proof.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
+        if (proof == null
+                || proof.getPoseMatchResult() != PoseMatchResult.SUCCESS
+                || proof.getImageObjectKey() == null
+                || !proof.getImageObjectKey().equals(expectedObjectKey)
+                || proof.getExpiresAt() == null
+                || proof.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
             return;
         }
-        wakeProofRepository.delete(proof);
+        proof.clearImageObjectKey();
     }
 }

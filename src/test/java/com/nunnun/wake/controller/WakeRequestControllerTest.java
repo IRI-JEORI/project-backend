@@ -65,6 +65,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -389,8 +390,77 @@ class WakeRequestControllerTest {
 
         wakeProofCleanupService.cleanupExpiredProofs();
         verify(wakeProofStorage).delete("wake-proofs/expired.jpg");
-        assertThat(wakeProofRepository.findById(expired.getId())).isEmpty();
+        WakeProof retained = wakeProofRepository.findById(expired.getId()).orElseThrow();
+        assertThat(retained.getImageObjectKey()).isNull();
+        assertThat(retained.getPoseMatchScore()).isEqualTo((short) 100);
+        assertThat(retained.getPoseMatchResult()).isEqualTo(PoseMatchResult.SUCCESS);
+        assertThat(retained.getSubmittedAt()).isEqualTo(NOW.minusHours(8));
+        assertThat(retained.getVerifiedAt()).isEqualTo(NOW.minusHours(8));
+        assertThat(retained.getExpiresAt()).isEqualTo(NOW);
         assertThat(wakeRequestRepository.findById(request.getId()).orElseThrow().getStatus()).isEqualTo(WakeRequestStatus.VERIFIED);
+        assertThat(wakeRequestRepository.existsRecentVerifiedProofByReceiverId(
+                receiver.getId(), NOW.minusHours(9))).isTrue();
+    }
+
+    @Test
+    void expiryCleanupFiltersCandidatesIsolatesFailuresAndConvergesOnRetry() {
+        User firstSender = saveUser("expiry-first-sender@example.com");
+        User firstReceiver = saveUser("expiry-first-receiver@example.com");
+        WakeProof failedDeletion = wakeProofRepository.saveAndFlush(WakeProof.verify(
+                createRequest(firstSender, firstReceiver), "wake-proofs/fail-delete.jpg", NOW.minusHours(9)));
+
+        User secondSender = saveUser("expiry-second-sender@example.com");
+        User secondReceiver = saveUser("expiry-second-receiver@example.com");
+        WakeProof successfulDeletion = wakeProofRepository.saveAndFlush(WakeProof.verify(
+                createRequest(secondSender, secondReceiver), "wake-proofs/delete.jpg", NOW.minusHours(8)));
+
+        User futureSender = saveUser("expiry-future-sender@example.com");
+        User futureReceiver = saveUser("expiry-future-receiver@example.com");
+        WakeProof future = wakeProofRepository.saveAndFlush(WakeProof.verify(
+                createRequest(futureSender, futureReceiver), "wake-proofs/future.jpg", NOW.minusHours(7)));
+
+        User failSender = saveUser("expiry-fail-sender@example.com");
+        User failReceiver = saveUser("expiry-fail-receiver@example.com");
+        WakeProof failedProof = wakeProofRepository.saveAndFlush(WakeProof.record(
+                createRequest(failSender, failReceiver), null, 40, PoseMatchResult.FAIL, NOW.minusHours(9)));
+
+        User nullKeySender = saveUser("expiry-null-key-sender@example.com");
+        User nullKeyReceiver = saveUser("expiry-null-key-receiver@example.com");
+        WakeProof nullKey = WakeProof.verify(
+                createRequest(nullKeySender, nullKeyReceiver), "wake-proofs/already-cleared.jpg", NOW.minusHours(9));
+        nullKey.clearImageObjectKey();
+        wakeProofRepository.saveAndFlush(nullKey);
+
+        User nullExpirySender = saveUser("expiry-null-expiry-sender@example.com");
+        User nullExpiryReceiver = saveUser("expiry-null-expiry-receiver@example.com");
+        WakeProof nullExpiry = WakeProof.verify(
+                createRequest(nullExpirySender, nullExpiryReceiver), "wake-proofs/no-expiry.jpg", NOW.minusHours(9));
+        ReflectionTestUtils.setField(nullExpiry, "expiresAt", null);
+        wakeProofRepository.saveAndFlush(nullExpiry);
+
+        doThrow(new WakeProofStorageException("temporary failure"))
+                .when(wakeProofStorage).delete("wake-proofs/fail-delete.jpg");
+
+        wakeProofCleanupService.cleanupExpiredProofs();
+
+        assertThat(wakeProofRepository.findById(failedDeletion.getId()).orElseThrow().getImageObjectKey())
+                .isEqualTo("wake-proofs/fail-delete.jpg");
+        assertThat(wakeProofRepository.findById(successfulDeletion.getId()).orElseThrow().getImageObjectKey()).isNull();
+        assertThat(wakeProofRepository.findById(future.getId()).orElseThrow().getImageObjectKey())
+                .isEqualTo("wake-proofs/future.jpg");
+        assertThat(wakeProofRepository.findById(failedProof.getId()).orElseThrow().getImageObjectKey()).isNull();
+        assertThat(wakeProofRepository.findById(nullKey.getId()).orElseThrow().getImageObjectKey()).isNull();
+        assertThat(wakeProofRepository.findById(nullExpiry.getId()).orElseThrow().getImageObjectKey())
+                .isEqualTo("wake-proofs/no-expiry.jpg");
+        verify(wakeProofStorage, org.mockito.Mockito.never()).delete("wake-proofs/future.jpg");
+        verify(wakeProofStorage, org.mockito.Mockito.never()).delete("wake-proofs/no-expiry.jpg");
+
+        org.mockito.Mockito.doNothing().when(wakeProofStorage).delete("wake-proofs/fail-delete.jpg");
+        wakeProofCleanupService.cleanupExpiredProofs();
+
+        assertThat(wakeProofRepository.findById(failedDeletion.getId()).orElseThrow().getImageObjectKey()).isNull();
+        verify(wakeProofStorage, org.mockito.Mockito.times(2)).delete("wake-proofs/fail-delete.jpg");
+        verify(wakeProofStorage).delete("wake-proofs/delete.jpg");
     }
 
     @Test

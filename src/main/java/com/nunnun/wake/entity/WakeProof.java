@@ -99,6 +99,10 @@ public class WakeProof extends BaseTimeEntity {
         this.expiresAt = verifiedAt == null ? null : verifiedAt.plusHours(8);
     }
 
+    public void clearImageObjectKey() {
+        this.imageObjectKey = null;
+    }
+
     public Long getId() { return id; }
     public WakeRequest getWakeRequest() { return wakeRequest; }
     public String getImageObjectKey() { return imageObjectKey; }
