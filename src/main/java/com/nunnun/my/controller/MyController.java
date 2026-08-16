@@ -3,6 +3,7 @@ package com.nunnun.my.controller;
 import com.nunnun.global.common.ApiResponse;
 import com.nunnun.global.security.jwt.AuthenticatedUser;
 import com.nunnun.my.dto.MyTodayResponse;
+import com.nunnun.my.dto.MyStatsResponse;
 import com.nunnun.my.dto.UpdateBedTimeRequest;
 import com.nunnun.my.dto.UpdateBedTimeResponse;
 import com.nunnun.my.dto.UpdateReturnTimeRequest;
@@ -10,6 +11,7 @@ import com.nunnun.my.dto.UpdateReturnTimeResponse;
 import com.nunnun.my.dto.UpdateWakeTimeRequest;
 import com.nunnun.my.dto.UpdateWakeTimeResponse;
 import com.nunnun.my.service.MyService;
+import com.nunnun.my.service.MyStatsService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,9 +26,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class MyController {
 
     private final MyService myService;
+    private final MyStatsService myStatsService;
 
-    public MyController(MyService myService) {
+    public MyController(MyService myService, MyStatsService myStatsService) {
         this.myService = myService;
+        this.myStatsService = myStatsService;
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<ApiResponse<MyStatsResponse>> getStats(
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(myStatsService.getStats(user.userId())));
     }
 
     @GetMapping("/today")

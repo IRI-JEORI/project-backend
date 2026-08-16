@@ -8,8 +8,20 @@ import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface WakeProofRepository extends JpaRepository<WakeProof, Long> {
+
+    @Query("""
+            select proof.verifiedAt as verifiedAt, request.targetWakeAt as targetWakeAt
+            from WakeProof proof join proof.wakeRequest request
+            where request.receiver.id = :receiverId
+              and request.status = com.nunnun.wake.entity.WakeRequestStatus.VERIFIED
+              and proof.poseMatchResult = com.nunnun.wake.entity.PoseMatchResult.SUCCESS
+              and proof.verifiedAt is not null
+            """)
+    List<WakeSuccessProjection> findSuccessHistoryByReceiverId(@Param("receiverId") Long receiverId);
 
     boolean existsByWakeRequestId(Long wakeRequestId);
 

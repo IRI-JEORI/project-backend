@@ -38,6 +38,7 @@ public class WakeRequestService {
     private final UserWriteGuard userWriteGuard;
     private final DailyPoseService dailyPoseService;
     private final WakeEligibilityPolicy wakeEligibilityPolicy;
+    private final WakeTargetSnapshotResolver wakeTargetSnapshotResolver;
 
     public WakeRequestService(
             WakeGroupRepository wakeGroupRepository,
@@ -49,7 +50,8 @@ public class WakeRequestService {
             DndWindowService dndWindowService,
             UserWriteGuard userWriteGuard,
             DailyPoseService dailyPoseService,
-            WakeEligibilityPolicy wakeEligibilityPolicy
+            WakeEligibilityPolicy wakeEligibilityPolicy,
+            WakeTargetSnapshotResolver wakeTargetSnapshotResolver
     ) {
         this.wakeGroupRepository = wakeGroupRepository;
         this.wakeGroupMemberRepository = wakeGroupMemberRepository;
@@ -61,6 +63,7 @@ public class WakeRequestService {
         this.userWriteGuard = userWriteGuard;
         this.dailyPoseService = dailyPoseService;
         this.wakeEligibilityPolicy = wakeEligibilityPolicy;
+        this.wakeTargetSnapshotResolver = wakeTargetSnapshotResolver;
     }
 
     @Transactional
@@ -93,7 +96,10 @@ public class WakeRequestService {
             throw new BusinessException(ErrorCode.WAKE_COOLDOWN_ACTIVE);
         }
         dailyPoseService.getOrCreateDailyPose(groupId, now.toLocalDate());
-        WakeRequest request = wakeRequestRepository.save(WakeRequest.send(group, sender, receiver, now));
+        LocalDateTime targetWakeAt = wakeTargetSnapshotResolver.resolve(receiverId, now);
+        WakeRequest request = wakeRequestRepository.save(
+                WakeRequest.send(group, sender, receiver, now, targetWakeAt)
+        );
         notificationService.createWakeRequest(request);
         return new CreateWakeRequestResponse(request.getId(), request.getStatus(), request.getRequestedAt());
     }
@@ -108,7 +114,10 @@ public class WakeRequestService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
         LocalDateTime now = LocalDateTime.now(clock);
         DailyPose dailyPose = dailyPoseService.getOrCreateDailyPose(group.getId(), now.toLocalDate());
-        WakeRequest request = wakeRequestRepository.save(WakeRequest.send(group, user, user, now));
+        LocalDateTime targetWakeAt = wakeTargetSnapshotResolver.resolve(userId, now);
+        WakeRequest request = wakeRequestRepository.save(
+                WakeRequest.send(group, user, user, now, targetWakeAt)
+        );
         return CreateSelfVerifyResponse.from(request, dailyPose);
     }
 

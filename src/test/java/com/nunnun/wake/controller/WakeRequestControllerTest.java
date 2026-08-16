@@ -24,6 +24,8 @@ import com.nunnun.notification.repository.DndWindowRepository;
 import com.nunnun.notification.repository.NotificationRepository;
 import com.nunnun.sleep.repository.SleepFeedbackRepository;
 import com.nunnun.sleep.repository.SleepSessionRepository;
+import com.nunnun.routine.entity.WeeklyWakeTarget;
+import com.nunnun.routine.repository.WeeklyWakeTargetRepository;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import com.nunnun.wake.entity.WakeGroup;
@@ -94,6 +96,7 @@ class WakeRequestControllerTest {
     @Autowired private UserRepository userRepository;
     @Autowired private JwtTokenProvider jwtTokenProvider;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private WeeklyWakeTargetRepository weeklyWakeTargetRepository;
     @MockBean private WakeProofStorage wakeProofStorage;
     @MockBean private PoseComparisonClient poseComparisonClient;
     private Pose activePose;
@@ -132,12 +135,35 @@ class WakeRequestControllerTest {
         assertThat(request.getReceiver().getId()).isEqualTo(receiver.getId());
         assertThat(request.getStatus()).isEqualTo(WakeRequestStatus.SENT);
         assertThat(request.getAttemptCount()).isZero();
+        assertThat(request.getTargetWakeAt()).isNull();
         assertThat(dailyPoseRepository.countByWakeGroupIdAndPoseDate(
                 group.getId(), NOW.toLocalDate())).isEqualTo(1);
         Notification notification = notificationRepository.findAll().getFirst();
         assertThat(notification.getType()).isEqualTo(NotificationType.WAKE_REQUEST);
         assertThat(notification.getUser().getId()).isEqualTo(receiver.getId());
         assertThat(notification.getReferenceId()).isEqualTo(request.getId());
+    }
+
+    @Test
+    void snapshotsReceiversTodayTargetAndKeepsExistingSnapshotImmutable() throws Exception {
+        User sender = saveUser("snapshot-sender@example.com");
+        User receiver = saveUser("snapshot-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WeeklyWakeTarget target = weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                receiver, DayOfWeek.WEDNESDAY, LocalTime.of(7, 30)
+        ));
+
+        wake(sender, group.getId(), receiver.getId()).andExpect(status().isCreated());
+        WakeRequest first = wakeRequestRepository.findAll().getFirst();
+        assertThat(first.getTargetWakeAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 7, 30));
+
+        target.changeTargetWakeTime(LocalTime.of(8, 0));
+        weeklyWakeTargetRepository.saveAndFlush(target);
+        wake(sender, group.getId(), receiver.getId()).andExpect(status().isCreated());
+
+        java.util.List<WakeRequest> requests = wakeRequestRepository.findAll();
+        assertThat(requests.get(0).getTargetWakeAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 7, 30));
+        assertThat(requests.get(1).getTargetWakeAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 8, 0));
     }
 
     @Test
@@ -570,6 +596,68 @@ class WakeRequestControllerTest {
     }
 
     @Test
+    void snapshotsTodayTargetForSelfVerify() throws Exception {
+        User user = saveUser("self-target@example.com");
+        createSingleMemberGroup(user, "SELFTG");
+        weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
+                user, DayOfWeek.WEDNESDAY, LocalTime.of(6, 50)
+        ));
+
+        mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(user)))
+                .andExpect(status().isCreated());
+
+        assertThat(wakeRequestRepository.findAll().getFirst().getTargetWakeAt())
+                .isEqualTo(LocalDateTime.of(2026, 8, 12, 6, 50));
+    }
+
+    @Test
+    void returnsStatsFromFinalRequestsAndSuccessfulProofHistory() throws Exception {
+        User sender = saveUser("stats-sender@example.com");
+        User receiver = saveUser("stats-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+
+        WakeRequest early = verifiedRequest(
+                group, sender, receiver,
+                LocalDateTime.of(2026, 8, 12, 7, 30),
+                LocalDateTime.of(2026, 8, 12, 7, 20),
+                "early.jpg"
+        );
+        WakeRequest late = verifiedRequest(
+                group, sender, receiver,
+                LocalDateTime.of(2026, 8, 12, 7, 30),
+                LocalDateTime.of(2026, 8, 12, 7, 45),
+                null
+        );
+        WakeRequest self = verifiedRequest(
+                group, receiver, receiver, null,
+                LocalDateTime.of(2026, 8, 11, 8, 0),
+                null
+        );
+        WakeRequest needsHelp = wakeRequestRepository.saveAndFlush(WakeRequest.send(
+                group, sender, receiver, NOW.minusMinutes(5),
+                LocalDateTime.of(2026, 8, 12, 7, 30)
+        ));
+        needsHelp.recordProofResult(false);
+        needsHelp.recordProofResult(false);
+        wakeRequestRepository.saveAndFlush(needsHelp);
+        wakeProofRepository.saveAndFlush(WakeProof.record(
+                needsHelp, "failed.jpg", 10, PoseMatchResult.FAIL, NOW.minusMinutes(4)
+        ));
+        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW));
+
+        mockMvc.perform(get("/me/stats").header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success_rate").value(75.0))
+                .andExpect(jsonPath("$.data.avg_gap_minutes").value(2.5))
+                .andExpect(jsonPath("$.data.streak_days").value(2))
+                .andExpect(jsonPath("$.data.length()").value(3));
+
+        assertThat(early.getStatus()).isEqualTo(WakeRequestStatus.VERIFIED);
+        assertThat(late.getStatus()).isEqualTo(WakeRequestStatus.VERIFIED);
+        assertThat(self.getSender().getId()).isEqualTo(self.getReceiver().getId());
+    }
+
+    @Test
     void selfVerifyRequiresMembershipAndActivePose() throws Exception {
         User noGroup = saveUser("self-no-group@example.com");
         mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(noGroup)))
@@ -652,6 +740,7 @@ class WakeRequestControllerTest {
         sleepSessionRepository.deleteAllInBatch();
         deviceRepository.deleteAllInBatch();
         refreshTokenRepository.deleteAllInBatch();
+        weeklyWakeTargetRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
     }
 
@@ -659,6 +748,25 @@ class WakeRequestControllerTest {
         WakeGroup group = createGroup(sender, receiver);
         WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW));
         dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
+        return request;
+    }
+
+    private WakeRequest verifiedRequest(
+            WakeGroup group,
+            User sender,
+            User receiver,
+            LocalDateTime targetWakeAt,
+            LocalDateTime verifiedAt,
+            String imageObjectKey
+    ) {
+        WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(
+                group, sender, receiver, verifiedAt.minusMinutes(1), targetWakeAt
+        ));
+        request.recordProofResult(true);
+        wakeRequestRepository.saveAndFlush(request);
+        wakeProofRepository.saveAndFlush(WakeProof.record(
+                request, imageObjectKey, 90, PoseMatchResult.SUCCESS, verifiedAt
+        ));
         return request;
     }
 

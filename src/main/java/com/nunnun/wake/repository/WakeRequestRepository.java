@@ -1,6 +1,7 @@
 package com.nunnun.wake.repository;
 
 import com.nunnun.wake.entity.WakeRequest;
+import com.nunnun.wake.entity.WakeRequestStatus;
 import java.util.List;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -12,6 +13,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> {
+
+    long countByReceiverIdAndStatus(Long receiverId, WakeRequestStatus status);
 
     @EntityGraph(attributePaths = "receiver")
     List<WakeRequest> findAllByWakeGroupId(Long wakeGroupId);
