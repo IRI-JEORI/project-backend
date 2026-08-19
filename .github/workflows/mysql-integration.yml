@@ -41,7 +41,7 @@ jobs:
           bash ./gradlew bootRun > boot-run.log 2>&1 &
           app_pid=$!
           trap 'kill "$app_pid" 2>/dev/null || true; cat boot-run.log' EXIT
-          for attempt in {1..60}; do
+          for attempt in {1..150}; do
             if grep -q 'Started NunnunApplication' boot-run.log; then
               break
             fi
