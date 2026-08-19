@@ -14,6 +14,7 @@ public record MyTodayResponse(
         LocalTime estimatedReturnTime,
         List<FixedScheduleResponse> fixedSchedules,
         @JsonProperty("resolved_target_wake_time") String resolvedTargetWakeTime,
-        @JsonProperty("next_target_at") OffsetDateTime nextTargetAt
+        @JsonProperty("next_target_at") OffsetDateTime nextTargetAt,
+        MyTodaySleepResponse sleep
 ) {
 }

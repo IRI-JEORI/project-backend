@@ -9,6 +9,7 @@ import java.time.ZoneId;
 
 public record WakeRequestDetailResponse(
         Long id,
+        @JsonProperty("group_id") Long groupId,
         WakeRequestStatus status,
         WakeRequestUserResponse sender,
         WakeRequestUserResponse receiver,
@@ -22,6 +23,7 @@ public record WakeRequestDetailResponse(
     public static WakeRequestDetailResponse from(WakeRequest request, DailyPose dailyPose) {
         return new WakeRequestDetailResponse(
                 request.getId(),
+                request.getWakeGroup().getId(),
                 request.getStatus(),
                 WakeRequestUserResponse.from(request.getSender()),
                 WakeRequestUserResponse.from(request.getReceiver()),

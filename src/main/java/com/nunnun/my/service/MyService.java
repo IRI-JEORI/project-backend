@@ -1,6 +1,7 @@
 package com.nunnun.my.service;
 
 import com.nunnun.my.dto.MyTodayResponse;
+import com.nunnun.my.dto.MyTodaySleepResponse;
 import com.nunnun.my.dto.UpdateBedTimeResponse;
 import com.nunnun.my.dto.UpdateReturnTimeResponse;
 import com.nunnun.my.dto.UpdateWakeTimeResponse;
@@ -11,6 +12,7 @@ import com.nunnun.routine.service.DailyRoutineService;
 import com.nunnun.routine.service.NextWakeTargetCalculator;
 import com.nunnun.schedule.dto.FixedScheduleResponse;
 import com.nunnun.schedule.repository.FixedScheduleRepository;
+import com.nunnun.sleep.service.SleepStateQueryService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -31,19 +33,22 @@ public class MyService {
     private final Clock clock;
     private final WeeklyWakeTargetRepository weeklyWakeTargetRepository;
     private final NextWakeTargetCalculator nextWakeTargetCalculator;
+    private final SleepStateQueryService sleepStateQueryService;
 
     public MyService(
             DailyRoutineService dailyRoutineService,
             FixedScheduleRepository fixedScheduleRepository,
             Clock clock,
             WeeklyWakeTargetRepository weeklyWakeTargetRepository,
-            NextWakeTargetCalculator nextWakeTargetCalculator
+            NextWakeTargetCalculator nextWakeTargetCalculator,
+            SleepStateQueryService sleepStateQueryService
     ) {
         this.dailyRoutineService = dailyRoutineService;
         this.fixedScheduleRepository = fixedScheduleRepository;
         this.clock = clock;
         this.weeklyWakeTargetRepository = weeklyWakeTargetRepository;
         this.nextWakeTargetCalculator = nextWakeTargetCalculator;
+        this.sleepStateQueryService = sleepStateQueryService;
     }
 
     @Transactional(readOnly = true)
@@ -73,7 +78,8 @@ public class MyService {
                 routine.map(DailyRoutine::getEstimatedReturnTime).orElse(null),
                 fixedSchedules,
                 resolvedTargetWakeTime,
-                nextTargetAt
+                nextTargetAt,
+                MyTodaySleepResponse.from(sleepStateQueryService.getCurrentState(userId))
         );
     }
 

@@ -18,6 +18,8 @@ import com.nunnun.routine.entity.WeeklyWakeTarget;
 import com.nunnun.routine.repository.WeeklyWakeTargetRepository;
 import com.nunnun.schedule.entity.FixedSchedule;
 import com.nunnun.schedule.repository.FixedScheduleRepository;
+import com.nunnun.sleep.entity.SleepSession;
+import com.nunnun.sleep.repository.SleepSessionRepository;
 import com.nunnun.user.entity.User;
 import com.nunnun.user.repository.UserRepository;
 import java.time.Clock;
@@ -90,6 +92,9 @@ class MyControllerTest {
     private WeeklyWakeTargetRepository weeklyWakeTargetRepository;
 
     @Autowired
+    private SleepSessionRepository sleepSessionRepository;
+
+    @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
     @Autowired
@@ -103,7 +108,33 @@ class MyControllerTest {
         deviceRepository.deleteAllInBatch();
         refreshTokenRepository.deleteAllInBatch();
         weeklyWakeTargetRepository.deleteAllInBatch();
+        sleepSessionRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
+    }
+
+    @Test
+    void returnsAwakeWhenNoSleepSessionExists() throws Exception {
+        User user = saveUser("awake-today@example.com");
+
+        mockMvc.perform(get("/me/today").header("Authorization", bearerTokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sleep.status").value("AWAKE"))
+                .andExpect(jsonPath("$.data.sleep.sleep_session_id").value(nullValue()))
+                .andExpect(jsonPath("$.data.sleep.started_at").value(nullValue()));
+    }
+
+    @Test
+    void returnsSleepingWithLatestActiveSession() throws Exception {
+        User user = saveUser("sleeping-today@example.com");
+        SleepSession session = sleepSessionRepository.saveAndFlush(
+                SleepSession.create(user, TODAY.minusDays(1), NOW.minusHours(10))
+        );
+
+        mockMvc.perform(get("/me/today").header("Authorization", bearerTokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sleep.status").value("SLEEPING"))
+                .andExpect(jsonPath("$.data.sleep.sleep_session_id").value(session.getId()))
+                .andExpect(jsonPath("$.data.sleep.started_at").value("2026-08-11T23:15:00+09:00"));
     }
 
     @Test

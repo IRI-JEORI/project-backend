@@ -23,6 +23,19 @@ public interface WakeProofRepository extends JpaRepository<WakeProof, Long> {
             """)
     List<WakeSuccessProjection> findSuccessHistoryByReceiverId(@Param("receiverId") Long receiverId);
 
+    @Query("""
+            select (count(proof) > 0)
+            from WakeProof proof join proof.wakeRequest request
+            where request.receiver.id = :receiverId
+              and request.status = com.nunnun.wake.entity.WakeRequestStatus.VERIFIED
+              and proof.poseMatchResult = com.nunnun.wake.entity.PoseMatchResult.SUCCESS
+              and proof.verifiedAt > :startedAt
+            """)
+    boolean existsSuccessfulVerificationAfter(
+            @Param("receiverId") Long receiverId,
+            @Param("startedAt") LocalDateTime startedAt
+    );
+
     boolean existsByWakeRequestId(Long wakeRequestId);
 
     Optional<WakeProof> findByWakeRequestId(Long wakeRequestId);

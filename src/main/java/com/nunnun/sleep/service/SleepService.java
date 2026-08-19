@@ -35,6 +35,7 @@ public class SleepService {
     private final Clock clock;
     private final NotificationService notificationService;
     private final UserWriteGuard userWriteGuard;
+    private final SleepStateQueryService sleepStateQueryService;
 
     public SleepService(
             SleepSessionRepository sleepSessionRepository,
@@ -42,7 +43,8 @@ public class SleepService {
             UserRepository userRepository,
             Clock clock,
             NotificationService notificationService,
-            UserWriteGuard userWriteGuard
+            UserWriteGuard userWriteGuard,
+            SleepStateQueryService sleepStateQueryService
     ) {
         this.sleepSessionRepository = sleepSessionRepository;
         this.sleepFeedbackRepository = sleepFeedbackRepository;
@@ -50,6 +52,7 @@ public class SleepService {
         this.clock = clock;
         this.notificationService = notificationService;
         this.userWriteGuard = userWriteGuard;
+        this.sleepStateQueryService = sleepStateQueryService;
     }
 
     @Transactional
@@ -70,6 +73,9 @@ public class SleepService {
                 userWriteGuard.lockRequiredActiveWithParticipants(userId, participants);
 
         User user = lockedUsers.get(userId);
+        if (sleepStateQueryService.getCurrentState(userId).isSleeping()) {
+            throw new BusinessException(ErrorCode.ALREADY_SLEEPING);
+        }
         LocalDateTime now = LocalDateTime.now(clock);
 
         SleepSessionSource sleepSource =

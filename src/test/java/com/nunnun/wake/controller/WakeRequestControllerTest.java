@@ -274,14 +274,16 @@ class WakeRequestControllerTest {
 
         mockMvc.perform(get("/wake-requests/{id}", request.getId()).header("Authorization", bearer(receiver)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.group_id").value(group.getId()))
                 .andExpect(jsonPath("$.data.status").value("SENT"))
                 .andExpect(jsonPath("$.data.sender.nickname").value("nunnun"))
+                .andExpect(jsonPath("$.data.receiver.nickname").value("nunnun"))
                 .andExpect(jsonPath("$.data.requested_at").value("2026-08-12T23:40:00+09:00"))
                 .andExpect(jsonPath("$.data.pose.date").value("2026-08-12"))
                 .andExpect(jsonPath("$.data.pose.description").value("양손으로 머리 위 하트를 만들어주세요"))
                 .andExpect(jsonPath("$.data.attempts_used").value(0))
                 .andExpect(jsonPath("$.data.remaining_attempts").value(2))
-                .andExpect(jsonPath("$.data.length()").value(8))
+                .andExpect(jsonPath("$.data.length()").value(9))
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
         mockMvc.perform(get("/wake-requests/{id}", request.getId()).header("Authorization", bearer(sender)))
                 .andExpect(status().isOk());

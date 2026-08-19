@@ -24,6 +24,7 @@ public enum ErrorCode {
     ),
     WAKE_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_TARGET_NOT_FOUND", "Wake target not found."),
     SLEEP_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "SLEEP_FEEDBACK_ALREADY_EXISTS", "Sleep feedback already exists for today."),
+    ALREADY_SLEEPING(HttpStatus.CONFLICT, "ALREADY_SLEEPING", "User is already sleeping."),
     WAKE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_GROUP_NOT_FOUND", "Wake group not found."),
     WAKE_GROUP_ACCESS_DENIED(HttpStatus.FORBIDDEN, "WAKE_GROUP_ACCESS_DENIED", "No access to this wake group."),
     ACTIVE_WAKE_GROUP_EXISTS(HttpStatus.CONFLICT, "ACTIVE_WAKE_GROUP_EXISTS", "User already belongs to a wake group."),

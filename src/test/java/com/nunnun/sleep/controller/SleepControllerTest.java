@@ -23,6 +23,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -124,13 +128,43 @@ class SleepControllerTest {
     }
 
     @Test
-    void allowsMultipleSleepSessionsWhenNoDuplicateRuleIsSpecified() throws Exception {
+    void rejectsAnotherSleepSessionWhileAlreadySleeping() throws Exception {
         User user = saveUser("multiple-sleep@example.com");
 
         postSleep(user).andExpect(status().isCreated());
-        postSleep(user).andExpect(status().isCreated());
+        postSleep(user)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_SLEEPING"));
 
-        assertThat(sleepSessionRepository.count()).isEqualTo(2);
+        assertThat(sleepSessionRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void serializesConcurrentSleepRequestsForTheSameUser() throws Exception {
+        User user = saveUser("concurrent-sleep@example.com");
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Callable<Integer> request = () -> {
+            ready.countDown();
+            start.await();
+            return postSleep(user).andReturn().getResponse().getStatus();
+        };
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<java.util.concurrent.Future<Integer>> results = List.of(
+                    executor.submit(request),
+                    executor.submit(request)
+            );
+            ready.await();
+            start.countDown();
+
+            assertThat(results)
+                    .extracting(result -> result.get())
+                    .containsExactlyInAnyOrder(201, 409);
+        }
+
+        assertThat(sleepSessionRepository.count()).isEqualTo(1);
     }
 
     @ParameterizedTest
