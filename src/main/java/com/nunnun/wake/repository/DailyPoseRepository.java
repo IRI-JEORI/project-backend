@@ -17,4 +17,6 @@ public interface DailyPoseRepository extends JpaRepository<DailyPose, Long> {
             @Param("groupId") Long groupId, @Param("poseDate") LocalDate poseDate);
 
     long countByWakeGroupIdAndPoseDate(Long wakeGroupId, LocalDate poseDate);
+
+    void deleteAllByWakeGroupId(Long wakeGroupId);
 }

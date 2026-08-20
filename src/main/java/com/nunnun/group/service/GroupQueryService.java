@@ -45,16 +45,19 @@ public class GroupQueryService {
         users.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        List<GroupEntry> entries = new ArrayList<>();
-        wakeGroupMembers.findAllWakeGroupsByUserId(userId).stream()
-                .map(GroupEntry::from)
-                .forEach(entries::add);
+        List<GroupEntry> wakeEntries = wakeGroupMembers
+                .findAllWithWakeGroupByUserIdOrderByJoinedAtAscIdAsc(userId).stream()
+                .map(member -> GroupEntry.from(member.getWakeGroup()))
+                .toList();
+        List<GroupEntry> entries = new ArrayList<>(wakeEntries);
         roommateGroupMembers.findAllRoommateGroupsByUserId(userId).stream()
                 .map(GroupEntry::from)
                 .forEach(entries::add);
 
-        List<GroupSummaryResponse> responses = entries.stream()
-                .sorted(GROUP_ORDER)
+        List<GroupEntry> globallyOrdered = entries.stream().sorted(GROUP_ORDER).toList();
+        java.util.Iterator<GroupEntry> orderedWakeGroups = wakeEntries.iterator();
+        List<GroupSummaryResponse> responses = globallyOrdered.stream()
+                .map(entry -> entry.type() == GroupType.WAKE ? orderedWakeGroups.next() : entry)
                 .map(GroupEntry::toResponse)
                 .toList();
         return new GroupListResponse(responses);

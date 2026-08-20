@@ -22,6 +22,12 @@ public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> 
     @Query("select request from WakeRequest request join fetch request.sender join fetch request.receiver where request.id = :id")
     Optional<WakeRequest> findDetailById(@Param("id") Long id);
 
+    @EntityGraph(attributePaths = {"sender", "receiver", "wakeGroup"})
+    Optional<WakeRequest> findFirstByReceiverIdAndStatusOrderByRequestedAtDescIdDesc(
+            Long receiverId,
+            WakeRequestStatus status
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select request from WakeRequest request join fetch request.receiver where request.id = :id")
     Optional<WakeRequest> findByIdForUpdate(@Param("id") Long id);

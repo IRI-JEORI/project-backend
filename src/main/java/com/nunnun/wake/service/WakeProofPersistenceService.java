@@ -55,9 +55,6 @@ public class WakeProofPersistenceService {
                         request.getWakeGroup().getId(), request.getRequestedAt().toLocalDate())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_POSE_NOT_FOUND));
         Pose pose = dailyPose.getPose();
-        if (!pose.isActive()) {
-            throw new BusinessException(ErrorCode.ACTIVE_POSE_NOT_FOUND);
-        }
         return new ProofPreparation(pose.getImageObjectKey(), pose.getDescription());
     }
 

@@ -1,5 +1,6 @@
 package com.nunnun.wake.repository;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nunnun.user.entity.User;
@@ -46,9 +47,8 @@ class WakeGroupMemberRepositoryTest {
         assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
                 WakeGroupMember.join(group, anotherUser, (short) 1)
         )).isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> wakeGroupMemberRepository.saveAndFlush(
-                WakeGroupMember.join(anotherGroup, creator, (short) 1)
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(anotherGroup, creator, (short) 1));
+        assertThat(wakeGroupMemberRepository.findAllByUserId(creator.getId())).hasSize(2);
     }
 
     @Test

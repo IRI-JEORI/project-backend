@@ -124,6 +124,28 @@ class GroupControllerTest {
     }
 
     @Test
+    void returnsWakeGroupsInMembershipJoinOrder() throws Exception {
+        User me = user("wake-order-me");
+        User owner = user("wake-order-owner");
+        WakeGroup first = wakeGroups.saveAndFlush(WakeGroup.create("A", "ORDR01", owner));
+        WakeGroup second = wakeGroups.saveAndFlush(WakeGroup.create("B", "ORDR02", owner));
+        WakeGroup third = wakeGroups.saveAndFlush(WakeGroup.create("C", "ORDR03", owner));
+        WakeGroupMember firstMember = wakeMembers.saveAndFlush(WakeGroupMember.join(first, me, (short) 1));
+        WakeGroupMember secondMember = wakeMembers.saveAndFlush(WakeGroupMember.join(second, me, (short) 1));
+        WakeGroupMember thirdMember = wakeMembers.saveAndFlush(WakeGroupMember.join(third, me, (short) 1));
+        setJoinedAt(firstMember.getId(), LocalDateTime.of(2026, 1, 1, 8, 0));
+        setJoinedAt(secondMember.getId(), LocalDateTime.of(2026, 1, 2, 8, 0));
+        setJoinedAt(thirdMember.getId(), LocalDateTime.of(2026, 1, 3, 8, 0));
+        entityManager.clear();
+
+        mvc.perform(get("/groups").header("Authorization", token(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.groups[0].name").value("A"))
+                .andExpect(jsonPath("$.data.groups[1].name").value("B"))
+                .andExpect(jsonPath("$.data.groups[2].name").value("C"));
+    }
+
+    @Test
     void returnsEmptyListForUserWithoutGroupsAndRequiresAuthentication() throws Exception {
         User me = user("me");
 
@@ -179,6 +201,15 @@ class GroupControllerTest {
         jdbcTemplate.update(
                 "update " + table + " set created_at = ? where id = ?",
                 Timestamp.valueOf(createdAt),
+                id
+        );
+    }
+
+
+    private void setJoinedAt(Long id, LocalDateTime joinedAt) {
+        jdbcTemplate.update(
+                "update wake_group_members set joined_at = ? where id = ?",
+                Timestamp.valueOf(joinedAt),
                 id
         );
     }

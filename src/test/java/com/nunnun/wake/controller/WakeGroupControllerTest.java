@@ -29,6 +29,10 @@ import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeGroupMember;
 import com.nunnun.wake.entity.WakeProof;
 import com.nunnun.wake.entity.WakeRequest;
+import com.nunnun.wake.entity.DailyPose;
+import com.nunnun.wake.entity.Pose;
+import com.nunnun.wake.repository.DailyPoseRepository;
+import com.nunnun.wake.repository.PoseRepository;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
@@ -73,6 +77,8 @@ class WakeGroupControllerTest {
     @Autowired private WakeGroupMemberRepository wakeGroupMemberRepository;
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
+    @Autowired private DailyPoseRepository dailyPoseRepository;
+    @Autowired private PoseRepository poseRepository;
     @Autowired private NotificationRepository notificationRepository;
     @Autowired private DndWindowRepository dndWindowRepository;
     @Autowired private WeeklyWakeTargetRepository weeklyWakeTargetRepository;
@@ -122,8 +128,7 @@ class WakeGroupControllerTest {
                         .header("Authorization", bearerTokenFor(creator))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Second Group\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAKE_GROUP_EXISTS"));
+                .andExpect(status().isCreated());
     }
 
     @Test
@@ -399,7 +404,7 @@ class WakeGroupControllerTest {
                 .andExpect(jsonPath("$.data.group_name").value("Wake Group"))
                 .andExpect(jsonPath("$.data.current_members").value(1))
                 .andExpect(jsonPath("$.data.capacity").value(4));
-        assertThat(wakeGroupMemberRepository.findByUserId(outsider.getId())).isEmpty();
+        assertThat(wakeGroupMemberRepository.findAllByUserId(outsider.getId())).isEmpty();
 
         preview(outsider, "BAD001")
                 .andExpect(jsonPath("$.data.valid").value(false))
@@ -407,7 +412,7 @@ class WakeGroupControllerTest {
         preview(creator, "PRE001")
                 .andExpect(jsonPath("$.data.reason").value("ALREADY_MEMBER"));
         preview(otherMember, "PRE001")
-                .andExpect(jsonPath("$.data.reason").value("ALREADY_IN_WAKE_GROUP"));
+                .andExpect(jsonPath("$.data.valid").value(true));
 
         User slotTwo = saveUser("preview-slot2@example.com");
         User slotThree = saveUser("preview-slot3@example.com");
@@ -421,26 +426,56 @@ class WakeGroupControllerTest {
     }
 
     @Test
-    void rejectsJoiningAnotherGroupWhenMembershipAlreadyExists() throws Exception {
+    void allowsUpToFourGroupsAndRejectsTheFifth() throws Exception {
         User firstCreator = saveUser("first-creator@example.com");
         User secondCreator = saveUser("second-creator@example.com");
         WakeGroup first = createGroup(firstCreator, "ONE001");
         WakeGroup second = createGroup(secondCreator, "TWO001");
 
-        join(firstCreator, second.getInviteCode())
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAKE_GROUP_EXISTS"));
+        join(firstCreator, second.getInviteCode()).andExpect(status().isCreated());
         mockMvc.perform(post("/wake-groups")
                         .header("Authorization", bearerTokenFor(firstCreator))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Third\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/wake-groups")
+                        .header("Authorization", bearerTokenFor(firstCreator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Fourth\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/wake-groups")
+                        .header("Authorization", bearerTokenFor(firstCreator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Fifth\"}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAKE_GROUP_EXISTS"));
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_LIMIT_REACHED"));
 
-        assertThat(wakeGroupMemberRepository.findByUserId(firstCreator.getId()))
-                .get()
-                .extracting(member -> member.getWakeGroup().getId())
-                .isEqualTo(first.getId());
+        assertThat(wakeGroupMemberRepository.findAllByUserId(firstCreator.getId())).hasSize(4);
+    }
+
+    @Test
+    void previewReportsLimitAndLeavingOneMembershipAllowsJoiningAgain() throws Exception {
+        User user = saveUser("multi-member@example.com");
+        WakeGroup first = createGroup(user, "MULT01");
+        WakeGroup second = createGroup(saveUser("multi-owner2@example.com"), "MULT02");
+        WakeGroup third = createGroup(saveUser("multi-owner3@example.com"), "MULT03");
+        WakeGroup fourth = createGroup(saveUser("multi-owner4@example.com"), "MULT04");
+        WakeGroup target = createGroup(saveUser("multi-target@example.com"), "MULT05");
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(second, user, (short) 2));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(third, user, (short) 2));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(fourth, user, (short) 2));
+
+        preview(user, target.getInviteCode())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.valid").value(false))
+                .andExpect(jsonPath("$.data.reason").value("WAKE_GROUP_LIMIT_REACHED"));
+
+        mockMvc.perform(delete("/wake-groups/{id}/members/me", first.getId())
+                        .header("Authorization", bearerTokenFor(user)))
+                .andExpect(status().isOk());
+        assertThat(wakeGroupMemberRepository.findAllByUserId(user.getId())).hasSize(3);
+        join(user, target.getInviteCode()).andExpect(status().isCreated());
+        assertThat(wakeGroupMemberRepository.findAllByUserId(user.getId())).hasSize(4);
     }
 
     @Test
@@ -451,6 +486,10 @@ class WakeGroupControllerTest {
         WakeGroup group = createGroup(creator, "LEAV01");
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, leavingUser, (short) 2));
         wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(group, remainingUser, (short) 3));
+        Pose pose = poseRepository.saveAndFlush(Pose.create(
+                "MEMBER_LEAVE_POSE", "poses/member-leave.png", "member leave pose"));
+        DailyPose dailyPose = dailyPoseRepository.saveAndFlush(DailyPose.create(
+                group, pose, NOW.toLocalDate()));
 
         mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
                         .header("Authorization", bearerTokenFor(leavingUser)))
@@ -459,6 +498,7 @@ class WakeGroupControllerTest {
 
         assertThat(wakeGroupMemberRepository.findByWakeGroupIdAndUserId(group.getId(), leavingUser.getId())).isEmpty();
         assertThat(wakeGroupRepository.findById(group.getId())).isPresent();
+        assertThat(dailyPoseRepository.findById(dailyPose.getId())).isPresent();
         assertThat(wakeGroupMemberRepository.findByWakeGroupIdAndUserId(group.getId(), remainingUser.getId()))
                 .get()
                 .extracting(WakeGroupMember::getSlotNo)
@@ -505,6 +545,23 @@ class WakeGroupControllerTest {
     }
 
     @Test
+    void lastMemberLeaveDeletesDailyPoseBeforeDeletingGroup() throws Exception {
+        User member = saveUser("daily-pose-leave@example.com");
+        WakeGroup group = createGroup(member, "POSEL1");
+        Pose pose = poseRepository.saveAndFlush(Pose.create(
+                "LEAVE_POSE", "poses/leave.png", "leave pose"));
+        DailyPose dailyPose = dailyPoseRepository.saveAndFlush(DailyPose.create(
+                group, pose, NOW.toLocalDate()));
+
+        mockMvc.perform(delete("/wake-groups/{id}/members/me", group.getId())
+                        .header("Authorization", bearerTokenFor(member)))
+                .andExpect(status().isOk());
+
+        assertThat(dailyPoseRepository.findById(dailyPose.getId())).isEmpty();
+        assertThat(wakeGroupRepository.findById(group.getId())).isEmpty();
+    }
+
+    @Test
     void lastMemberLeaveDeletesOnlyGroupWakeHistoryAndProofObject() throws Exception {
         User member = saveUser("member@example.com");
         User unrelatedUser = saveUser("unrelated@example.com");
@@ -516,6 +573,10 @@ class WakeGroupControllerTest {
         WakeProof deletedProof = wakeProofRepository.saveAndFlush(WakeProof.verify(
                 deletedRequest, "wake-proofs/deleted.jpg", LocalDateTime.now(ZoneOffset.UTC)
         ));
+        Pose pose = poseRepository.saveAndFlush(Pose.create(
+                "HISTORY_POSE", "poses/history.png", "history pose"));
+        DailyPose dailyPose = dailyPoseRepository.saveAndFlush(DailyPose.create(
+                deletedGroup, pose, NOW.toLocalDate()));
         Notification deletedNotification = notificationRepository.saveAndFlush(Notification.createImmediate(
                 member, NotificationType.WAKE_REQUEST, "wake", "wake", deletedRequest.getId(),
                 LocalDateTime.now(ZoneOffset.UTC)
@@ -532,6 +593,7 @@ class WakeGroupControllerTest {
         assertThat(wakeGroupRepository.findById(deletedGroup.getId())).isEmpty();
         assertThat(wakeRequestRepository.findById(deletedRequest.getId())).isEmpty();
         assertThat(wakeProofRepository.findById(deletedProof.getId())).isEmpty();
+        assertThat(dailyPoseRepository.findById(dailyPose.getId())).isEmpty();
         assertThat(notificationRepository.findById(deletedNotification.getId())).isEmpty();
         assertThat(notificationRepository.findById(unrelatedNotification.getId())).isPresent();
         assertThat(wakeGroupRepository.findById(unrelatedGroup.getId())).isPresent();
@@ -565,9 +627,11 @@ class WakeGroupControllerTest {
         dndWindowRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
+        dailyPoseRepository.deleteAllInBatch();
         weeklyWakeTargetRepository.deleteAllInBatch();
         wakeGroupMemberRepository.deleteAllInBatch();
         wakeGroupRepository.deleteAllInBatch();
+        poseRepository.deleteAllInBatch();
         sleepFeedbackRepository.deleteAllInBatch();
         sleepSessionRepository.deleteAllInBatch();
         deviceRepository.deleteAllInBatch();

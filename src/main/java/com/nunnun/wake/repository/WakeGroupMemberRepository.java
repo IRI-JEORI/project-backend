@@ -21,12 +21,11 @@ public interface WakeGroupMemberRepository extends JpaRepository<WakeGroupMember
 
     long countByWakeGroupId(Long wakeGroupId);
 
-    boolean existsByUserId(Long userId);
+    long countByUserId(Long userId);
 
-    Optional<WakeGroupMember> findByUserId(Long userId);
-
-    @Query("select member.wakeGroup from WakeGroupMember member where member.user.id = :userId")
-    List<com.nunnun.wake.entity.WakeGroup> findAllWakeGroupsByUserId(@Param("userId") Long userId);
+    @Query("select member from WakeGroupMember member join fetch member.wakeGroup "
+            + "where member.user.id = :userId order by member.joinedAt asc, member.id asc")
+    List<WakeGroupMember> findAllWithWakeGroupByUserIdOrderByJoinedAtAscIdAsc(@Param("userId") Long userId);
 
     List<WakeGroupMember> findAllByUserId(Long userId);
 }

@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WakeGroupService {
 
     private static final short FIRST_SLOT = 1;
+    private static final int MAX_WAKE_GROUPS_PER_USER = 4;
     private static final int INVITE_CODE_MAX_ATTEMPTS = 5;
 
     private final WakeGroupRepository wakeGroupRepository;
@@ -58,9 +59,7 @@ public class WakeGroupService {
     @Transactional
     public CreateWakeGroupResponse createWakeGroup(Long userId, String name) {
         User creator = userWriteGuard.lockActive(userId);
-        if (wakeGroupMemberRepository.existsByUserId(userId)) {
-            throw new BusinessException(ErrorCode.ACTIVE_WAKE_GROUP_EXISTS);
-        }
+        ensureMembershipLimitNotReached(userId);
         WakeGroup group = wakeGroupRepository.saveAndFlush(
                 WakeGroup.create(name, generateAvailableInviteCode(), creator)
         );
@@ -79,13 +78,10 @@ public class WakeGroupService {
         User user = userWriteGuard.lockActive(userId);
         WakeGroup group = wakeGroupRepository.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        WakeGroupMember currentMembership = wakeGroupMemberRepository.findByUserId(userId).orElse(null);
-        if (currentMembership != null) {
-            if (currentMembership.getWakeGroup().getId().equals(group.getId())) {
-                throw new BusinessException(ErrorCode.ALREADY_MEMBER);
-            }
-            throw new BusinessException(ErrorCode.ACTIVE_WAKE_GROUP_EXISTS);
+        if (wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(group.getId(), userId)) {
+            throw new BusinessException(ErrorCode.ALREADY_MEMBER);
         }
+        ensureMembershipLimitNotReached(userId);
         List<WakeGroupMember> members = wakeGroupMemberRepository.findAllByWakeGroupId(group.getId());
         if (members.size() >= group.getCapacity()) {
             throw new BusinessException(ErrorCode.WAKE_GROUP_FULL);
@@ -136,12 +132,11 @@ public class WakeGroupService {
             return WakeGroupPreviewResponse.invalid(WakeGroupPreviewReason.INVALID_CODE);
         }
 
-        WakeGroupMember currentMembership = wakeGroupMemberRepository.findByUserId(userId).orElse(null);
-        if (currentMembership != null) {
-            if (currentMembership.getWakeGroup().getId().equals(group.getId())) {
-                return WakeGroupPreviewResponse.invalid(WakeGroupPreviewReason.ALREADY_MEMBER);
-            }
-            return WakeGroupPreviewResponse.invalid(WakeGroupPreviewReason.ALREADY_IN_WAKE_GROUP);
+        if (wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(group.getId(), userId)) {
+            return WakeGroupPreviewResponse.invalid(WakeGroupPreviewReason.ALREADY_MEMBER);
+        }
+        if (wakeGroupMemberRepository.countByUserId(userId) >= MAX_WAKE_GROUPS_PER_USER) {
+            return WakeGroupPreviewResponse.invalid(WakeGroupPreviewReason.WAKE_GROUP_LIMIT_REACHED);
         }
 
         long currentMembers = wakeGroupMemberRepository.countByWakeGroupId(group.getId());
@@ -199,6 +194,12 @@ public class WakeGroupService {
     private User findActiveUser(Long userId) {
         return userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    private void ensureMembershipLimitNotReached(Long userId) {
+        if (wakeGroupMemberRepository.countByUserId(userId) >= MAX_WAKE_GROUPS_PER_USER) {
+            throw new BusinessException(ErrorCode.WAKE_GROUP_LIMIT_REACHED);
+        }
     }
 
     private void ensureMember(Long groupId, Long userId) {

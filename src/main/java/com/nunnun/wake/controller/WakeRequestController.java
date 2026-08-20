@@ -42,12 +42,13 @@ public class WakeRequestController {
                 .body(ApiResponse.success(wakeRequestService.createWakeRequest(user.userId(), groupId, receiverId)));
     }
 
-    @PostMapping("/me/self-verify")
+    @PostMapping("/wake-groups/{groupId}/self-verify")
     public ResponseEntity<ApiResponse<CreateSelfVerifyResponse>> createSelfVerify(
-            @AuthenticationPrincipal AuthenticatedUser user
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Long groupId
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(wakeRequestService.createSelfVerify(user.userId())));
+                .body(ApiResponse.success(wakeRequestService.createSelfVerify(user.userId(), groupId)));
     }
 
     @GetMapping("/wake-requests/{requestId}")
@@ -56,6 +57,15 @@ public class WakeRequestController {
             @PathVariable Long requestId
     ) {
         return ResponseEntity.ok(ApiResponse.success(wakeRequestService.getWakeRequest(user.userId(), requestId)));
+    }
+
+    @GetMapping("/me/wake-requests/pending")
+    public ResponseEntity<ApiResponse<WakeRequestDetailResponse>> getPendingWakeRequest(
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                wakeRequestService.getPendingWakeRequest(user.userId()).orElse(null)
+        ));
     }
 
     @PostMapping(value = "/wake-requests/{requestId}/proof", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

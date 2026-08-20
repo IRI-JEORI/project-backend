@@ -13,6 +13,7 @@ import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
+import com.nunnun.wake.repository.DailyPoseRepository;
 import com.nunnun.wake.storage.WakeProofStorage;
 import java.util.List;
 import org.slf4j.Logger;
@@ -30,6 +31,7 @@ public class WakeGroupLifecycleService {
     private final WakeGroupMemberRepository members;
     private final WakeRequestRepository requests;
     private final WakeProofRepository proofs;
+    private final DailyPoseRepository dailyPoses;
     private final NotificationRepository notifications;
     private final WakeProofStorage storage;
 
@@ -38,6 +40,7 @@ public class WakeGroupLifecycleService {
             WakeGroupMemberRepository members,
             WakeRequestRepository requests,
             WakeProofRepository proofs,
+            DailyPoseRepository dailyPoses,
             NotificationRepository notifications,
             WakeProofStorage storage
     ) {
@@ -45,6 +48,7 @@ public class WakeGroupLifecycleService {
         this.members = members;
         this.requests = requests;
         this.proofs = proofs;
+        this.dailyPoses = dailyPoses;
         this.notifications = notifications;
         this.storage = storage;
     }
@@ -101,6 +105,8 @@ public class WakeGroupLifecycleService {
         proofs.flush();
         requests.deleteAll(groupRequests);
         requests.flush();
+        dailyPoses.deleteAllByWakeGroupId(groupId);
+        dailyPoses.flush();
         groups.delete(group);
         groups.flush();
         deleteProofObjectsAfterCommit(groupId, objectKeys);

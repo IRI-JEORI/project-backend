@@ -110,7 +110,7 @@ class WakeRequestConcurrencyTest {
                 ready.countDown();
                 try {
                     start.await();
-                    service.createSelfVerify(user.getId());
+                    service.createSelfVerify(user.getId(), group.getId());
                     successes.incrementAndGet();
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();

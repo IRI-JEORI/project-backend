@@ -20,18 +20,21 @@ class OpenAiPoseComparisonClientTest {
     }
 
     @Test
-    void buildsResponsesRequestWithTwoHighDetailImagesAndStrictScoreSchema() {
+    void buildsPoseOnlyRequestWithSubmittedImageAndStrictScoreSchema() {
         String request = client.createRequest(
-                "https://signed.example/reference",
                 "https://signed.example/submitted",
                 "cross both arms"
         ).toString();
 
         assertThat(request)
                 .contains("gpt-5-mini")
-                .contains("https://signed.example/reference")
-                .contains("https://signed.example/submitted")
+                .containsOnlyOnce("https://signed.example/submitted")
                 .contains("cross both arms")
+                .contains("Target pose requirements")
+                .contains("submitted image")
+                .contains("Judge only body")
+                .contains("geometry and pose")
+                .contains("90-100")
                 .contains("high")
                 .contains("pose_similarity_score")
                 .contains("minimum=0")
@@ -42,7 +45,9 @@ class OpenAiPoseComparisonClientTest {
 
     @Test
     void parsesValidScoreAndRejectsMalformedOrOutOfRangeOutput() {
+        assertThat(client.parseScore("{\"score\":0}")).isZero();
         assertThat(client.parseScore("{\"score\":70}")).isEqualTo(70);
+        assertThat(client.parseScore("{\"score\":100}")).isEqualTo(100);
         assertThatThrownBy(() -> client.parseScore("not-json"))
                 .isInstanceOf(PoseComparisonException.class);
         assertThatThrownBy(() -> client.parseScore("{\"score\":null}"))

@@ -33,7 +33,7 @@ class WakeProofServiceTest {
         when(persistence.prepare(any(), any()))
                 .thenReturn(new WakeProofPersistenceService.ProofPreparation("poses/reference.png", "pose"));
         when(storage.createReadUrl(anyString(), any())).thenReturn("https://signed.example/image");
-        when(comparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(82);
+        when(comparisonClient.compare(anyString(), anyString())).thenReturn(82);
         when(persistence.applyResult(any(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
                 .thenReturn(new CreateWakeProofResponse(
                         1L, 1, 82, PoseMatchResult.SUCCESS, WakeRequestStatus.VERIFIED,
@@ -46,6 +46,15 @@ class WakeProofServiceTest {
         service.createWakeProof(1L, 2L, file("image/png", bytes(32, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)));
         service.createWakeProof(1L, 3L, file("image/webp", bytes(32, 0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50)));
         verify(storage, org.mockito.Mockito.times(3)).upload(anyString(), any());
+    }
+
+    @Test
+    void createsReadUrlOnlyForSubmittedImage() {
+        service.createWakeProof(1L, 1L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF)));
+
+        verify(storage, org.mockito.Mockito.never())
+                .createReadUrl(org.mockito.ArgumentMatchers.eq("poses/reference.png"), any());
+        verify(storage, org.mockito.Mockito.times(1)).createReadUrl(anyString(), any());
     }
 
     @Test
@@ -69,7 +78,7 @@ class WakeProofServiceTest {
     @Test
     void openAiFailureCleansUploadedObjectWithoutApplyingResult() {
         doThrow(new RuntimeException("timeout"))
-                .when(comparisonClient).compare(anyString(), anyString(), anyString());
+                .when(comparisonClient).compare(anyString(), anyString());
 
         assertThatThrownBy(() -> service.createWakeProof(
                 1L, 1L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF))))
@@ -83,7 +92,7 @@ class WakeProofServiceTest {
 
     @Test
     void invalidScoresAreAnalysisFailuresAndDoNotApplyResult() {
-        when(comparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(-1, 101);
+        when(comparisonClient.compare(anyString(), anyString())).thenReturn(-1, 101);
 
         assertThatThrownBy(() -> service.createWakeProof(
                 1L, 1L, file("image/jpeg", bytes(8, 0xFF, 0xD8, 0xFF))))

@@ -28,6 +28,7 @@ public enum ErrorCode {
     WAKE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "WAKE_GROUP_NOT_FOUND", "Wake group not found."),
     WAKE_GROUP_ACCESS_DENIED(HttpStatus.FORBIDDEN, "WAKE_GROUP_ACCESS_DENIED", "No access to this wake group."),
     ACTIVE_WAKE_GROUP_EXISTS(HttpStatus.CONFLICT, "ACTIVE_WAKE_GROUP_EXISTS", "User already belongs to a wake group."),
+    WAKE_GROUP_LIMIT_REACHED(HttpStatus.CONFLICT, "WAKE_GROUP_LIMIT_REACHED", "You can join up to 4 wake groups."),
     ALREADY_MEMBER(HttpStatus.CONFLICT, "ALREADY_MEMBER", "User already joined this wake group."),
     WAKE_GROUP_ALREADY_JOINED(HttpStatus.CONFLICT, "WAKE_GROUP_ALREADY_JOINED", "User already joined this wake group."),
     WAKE_GROUP_FULL(HttpStatus.CONFLICT, "WAKE_GROUP_FULL", "Wake group is full."),

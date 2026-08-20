@@ -106,7 +106,7 @@ class WakeRequestControllerTest {
         clock.set(NOW);
         reset(wakeProofStorage, poseComparisonClient);
         when(wakeProofStorage.createReadUrl(anyString(), any())).thenReturn("https://signed.example/image");
-        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(82);
+        when(poseComparisonClient.compare(anyString(), anyString())).thenReturn(82);
         clearData();
         activePose = poseRepository.saveAndFlush(
                 Pose.create("TEST_POSE", "test/pose.png", "양손으로 머리 위 하트를 만들어주세요")
@@ -280,6 +280,7 @@ class WakeRequestControllerTest {
                 .andExpect(jsonPath("$.data.receiver.nickname").value("nunnun"))
                 .andExpect(jsonPath("$.data.requested_at").value("2026-08-12T23:40:00+09:00"))
                 .andExpect(jsonPath("$.data.pose.date").value("2026-08-12"))
+                .andExpect(jsonPath("$.data.pose.code").value("TEST_POSE"))
                 .andExpect(jsonPath("$.data.pose.description").value("양손으로 머리 위 하트를 만들어주세요"))
                 .andExpect(jsonPath("$.data.attempts_used").value(0))
                 .andExpect(jsonPath("$.data.remaining_attempts").value(2))
@@ -320,6 +321,41 @@ class WakeRequestControllerTest {
     }
 
     @Test
+    void receiverUploadsProofForHistoricalDailyPoseAfterPoseIsDeactivated() throws Exception {
+        User sender = saveUser("historical-pose-sender@example.com");
+        User receiver = saveUser("historical-pose-receiver@example.com");
+        WakeRequest request = createRequest(sender, receiver);
+        ReflectionTestUtils.setField(activePose, "active", false);
+        poseRepository.saveAndFlush(activePose);
+
+        uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1}))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.pose_match_result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.request_status").value("VERIFIED"));
+
+        assertThat(wakeProofRepository.findByWakeRequestId(request.getId())).isPresent();
+        assertThat(wakeRequestRepository.findById(request.getId()).orElseThrow().getStatus())
+                .isEqualTo(WakeRequestStatus.VERIFIED);
+    }
+
+    @Test
+    void proofStillFailsWhenDailyPoseDoesNotExist() throws Exception {
+        User sender = saveUser("missing-daily-pose-sender@example.com");
+        User receiver = saveUser("missing-daily-pose-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest request = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW)
+        );
+
+        uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1}))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ACTIVE_POSE_NOT_FOUND"));
+
+        assertThat(wakeProofRepository.count()).isZero();
+        verify(wakeProofStorage, org.mockito.Mockito.never()).upload(anyString(), any());
+    }
+
+    @Test
     void rejectsInvalidProofsAndStorageFailureWithoutSavingProof() throws Exception {
         User sender = saveUser("sender@example.com");
         User receiver = saveUser("receiver@example.com");
@@ -340,7 +376,7 @@ class WakeRequestControllerTest {
         User sender = saveUser("sender@example.com");
         User receiver = saveUser("receiver@example.com");
         WakeRequest request = createRequest(sender, receiver);
-        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(40, 82);
+        when(poseComparisonClient.compare(anyString(), anyString())).thenReturn(40, 82);
 
         uploadProof(receiver, request.getId(), image("image.png", "image/png", new byte[]{1}))
                 .andExpect(status().isCreated())
@@ -376,7 +412,7 @@ class WakeRequestControllerTest {
         User firstSender = saveUser("threshold-sender@example.com");
         User firstReceiver = saveUser("threshold-receiver@example.com");
         WakeRequest threshold = createRequest(firstSender, firstReceiver);
-        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(70);
+        when(poseComparisonClient.compare(anyString(), anyString())).thenReturn(70);
         uploadProof(firstReceiver, threshold.getId(), image("threshold.png", "image/png", new byte[]{1}))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.pose_match_score").value(70))
@@ -385,7 +421,7 @@ class WakeRequestControllerTest {
         User secondSender = saveUser("maximum-sender@example.com");
         User secondReceiver = saveUser("maximum-receiver@example.com");
         WakeRequest maximum = createRequest(secondSender, secondReceiver);
-        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(100);
+        when(poseComparisonClient.compare(anyString(), anyString())).thenReturn(100);
         uploadProof(secondReceiver, maximum.getId(), image("maximum.png", "image/png", new byte[]{1}))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.pose_match_score").value(100))
@@ -397,7 +433,7 @@ class WakeRequestControllerTest {
         User sender = saveUser("retry-fail-sender@example.com");
         User receiver = saveUser("retry-fail-receiver@example.com");
         WakeRequest request = createRequest(sender, receiver);
-        when(poseComparisonClient.compare(anyString(), anyString(), anyString())).thenReturn(40, 55);
+        when(poseComparisonClient.compare(anyString(), anyString())).thenReturn(40, 55);
 
         uploadProof(receiver, request.getId(), image("first.png", "image/png", new byte[]{1}))
                 .andExpect(status().isCreated());
@@ -412,7 +448,7 @@ class WakeRequestControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("INVALID_WAKE_REQUEST_STATUS"));
         verify(wakeProofStorage, org.mockito.Mockito.never()).upload(anyString(), any());
-        verify(poseComparisonClient, org.mockito.Mockito.never()).compare(anyString(), anyString(), anyString());
+        verify(poseComparisonClient, org.mockito.Mockito.never()).compare(anyString(), anyString());
         assertThat(wakeProofRepository.count()).isOne();
     }
 
@@ -541,6 +577,7 @@ class WakeRequestControllerTest {
                             .header("Authorization", bearer(receiver)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.pose.date").value("2026-08-12"))
+                    .andExpect(jsonPath("$.data.pose.code").value("TEST_POSE"))
                     .andExpect(jsonPath("$.data.pose.description")
                             .value("양손으로 머리 위 하트를 만들어주세요"));
         }
@@ -582,11 +619,12 @@ class WakeRequestControllerTest {
         User user = saveUser("self@example.com");
         WakeGroup group = createSingleMemberGroup(user, "SELF01");
 
-        mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(user)))
+        mockMvc.perform(post("/wake-groups/{groupId}/self-verify", group.getId()).header("Authorization", bearer(user)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.status").value("SENT"))
                 .andExpect(jsonPath("$.data.self_verify").value(true))
                 .andExpect(jsonPath("$.data.pose.date").value("2026-08-12"))
+                .andExpect(jsonPath("$.data.pose.code").value("TEST_POSE"))
                 .andExpect(jsonPath("$.data.pose.description")
                         .value("양손으로 머리 위 하트를 만들어주세요"));
 
@@ -601,14 +639,111 @@ class WakeRequestControllerTest {
     }
 
     @Test
+    void returnsReceiversLatestPendingWakeRequest() throws Exception {
+        User olderSender = saveUser("pending-older-sender@example.com");
+        User newerSender = saveUser("pending-newer-sender@example.com");
+        User receiver = saveUser("pending-receiver@example.com");
+        WakeGroup olderGroup = createGroup(olderSender, receiver);
+        WakeGroup newerGroup = createGroup(newerSender, receiver);
+        WakeRequest older = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(olderGroup, olderSender, receiver, NOW.minusMinutes(1))
+        );
+        WakeRequest newer = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(newerGroup, newerSender, receiver, NOW)
+        );
+        dailyPoseRepository.saveAndFlush(DailyPose.create(olderGroup, activePose, NOW.toLocalDate()));
+        dailyPoseRepository.saveAndFlush(DailyPose.create(newerGroup, activePose, NOW.toLocalDate()));
+
+        mockMvc.perform(get("/me/wake-requests/pending").header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(newer.getId()))
+                .andExpect(jsonPath("$.data.group_id").value(newerGroup.getId()))
+                .andExpect(jsonPath("$.data.status").value("SENT"))
+                .andExpect(jsonPath("$.data.sender.id").value(newerSender.getId()))
+                .andExpect(jsonPath("$.data.receiver.id").value(receiver.getId()))
+                .andExpect(jsonPath("$.data.pose.code").value("TEST_POSE"));
+
+        assertThat(newer.getId()).isGreaterThan(older.getId());
+    }
+
+    @Test
+    void pendingWakeRequestUsesIdAsTieBreakerAndNeverReturnsAnotherReceiver() throws Exception {
+        User sender = saveUser("pending-tie-sender@example.com");
+        User receiver = saveUser("pending-tie-receiver@example.com");
+        User otherReceiver = saveUser("pending-other-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeGroup otherGroup = createGroup(otherReceiver, sender);
+        WakeRequest first = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW)
+        );
+        WakeRequest latestId = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW)
+        );
+        wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(otherGroup, sender, otherReceiver, NOW.plusMinutes(1))
+        );
+        dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
+        dailyPoseRepository.saveAndFlush(DailyPose.create(otherGroup, activePose, NOW.toLocalDate()));
+
+        mockMvc.perform(get("/me/wake-requests/pending").header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(latestId.getId()));
+
+        assertThat(latestId.getId()).isGreaterThan(first.getId());
+    }
+
+    @Test
+    void pendingWakeRequestExcludesVerifiedAndNeedsHelpAndReturnsNullWhenAbsent() throws Exception {
+        User sender = saveUser("pending-status-sender@example.com");
+        User receiver = saveUser("pending-status-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest verified = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(1))
+        );
+        verified.verify();
+        wakeRequestRepository.saveAndFlush(verified);
+        WakeRequest needsHelp = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW)
+        );
+        needsHelp.recordProofResult(false);
+        needsHelp.recordProofResult(false);
+        wakeRequestRepository.saveAndFlush(needsHelp);
+        dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
+
+        mockMvc.perform(get("/me/wake-requests/pending").header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void selfVerifyUsesTheRequestedGroupWhenUserHasMultipleMemberships() throws Exception {
+        User user = saveUser("self-multiple@example.com");
+        WakeGroup groupA = createSingleMemberGroup(user, "SELFA1");
+        WakeGroup groupB = createSingleMemberGroup(user, "SELFB1");
+        DailyPose groupAPose = dailyPoseRepository.saveAndFlush(
+                DailyPose.create(groupA, activePose, NOW.toLocalDate()));
+
+        mockMvc.perform(post("/wake-groups/{groupId}/self-verify", groupB.getId())
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isCreated());
+
+        WakeRequest request = wakeRequestRepository.findAll().getFirst();
+        assertThat(request.getWakeGroup().getId()).isEqualTo(groupB.getId());
+        assertThat(dailyPoseRepository.findByWakeGroupIdAndPoseDate(groupB.getId(), NOW.toLocalDate()))
+                .isPresent();
+        assertThat(dailyPoseRepository.findById(groupAPose.getId())).isPresent();
+    }
+
+    @Test
     void snapshotsTodayTargetForSelfVerify() throws Exception {
         User user = saveUser("self-target@example.com");
-        createSingleMemberGroup(user, "SELFTG");
+        WakeGroup group = createSingleMemberGroup(user, "SELFTG");
         weeklyWakeTargetRepository.saveAndFlush(WeeklyWakeTarget.create(
                 user, DayOfWeek.WEDNESDAY, LocalTime.of(6, 50)
         ));
 
-        mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(user)))
+        mockMvc.perform(post("/wake-groups/{groupId}/self-verify", group.getId()).header("Authorization", bearer(user)))
                 .andExpect(status().isCreated());
 
         assertThat(wakeRequestRepository.findAll().getFirst().getTargetWakeAt())
@@ -665,16 +800,17 @@ class WakeRequestControllerTest {
     @Test
     void selfVerifyRequiresMembershipAndActivePose() throws Exception {
         User noGroup = saveUser("self-no-group@example.com");
-        mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(noGroup)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_NOT_FOUND"));
+        WakeGroup inaccessible = createSingleMemberGroup(saveUser("self-other@example.com"), "SELF00");
+        mockMvc.perform(post("/wake-groups/{groupId}/self-verify", inaccessible.getId()).header("Authorization", bearer(noGroup)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ACCESS_DENIED"));
         assertThat(wakeRequestRepository.count()).isZero();
         assertThat(dailyPoseRepository.count()).isZero();
 
         User noPose = saveUser("self-no-pose@example.com");
-        createSingleMemberGroup(noPose, "SELF02");
+        WakeGroup noPoseGroup = createSingleMemberGroup(noPose, "SELF02");
         poseRepository.deleteAllInBatch();
-        mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(noPose)))
+        mockMvc.perform(post("/wake-groups/{groupId}/self-verify", noPoseGroup.getId()).header("Authorization", bearer(noPose)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("ACTIVE_POSE_NOT_FOUND"));
         assertThat(wakeRequestRepository.count()).isZero();
@@ -700,7 +836,7 @@ class WakeRequestControllerTest {
                 user, DayOfWeek.WEDNESDAY, LocalTime.of(23, 0), LocalTime.of(23, 59)
         ));
 
-        mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(user)))
+        mockMvc.perform(post("/wake-groups/{groupId}/self-verify", group.getId()).header("Authorization", bearer(user)))
                 .andExpect(status().isCreated());
 
         assertThat(wakeRequestRepository.count()).isEqualTo(2);
@@ -712,8 +848,8 @@ class WakeRequestControllerTest {
     @Test
     void selfVerifySupportsDetailAndExistingProofAuthorization() throws Exception {
         User user = saveUser("self-detail@example.com");
-        createSingleMemberGroup(user, "SELF04");
-        String response = mockMvc.perform(post("/me/self-verify").header("Authorization", bearer(user)))
+        WakeGroup group = createSingleMemberGroup(user, "SELF04");
+        String response = mockMvc.perform(post("/wake-groups/{groupId}/self-verify", group.getId()).header("Authorization", bearer(user)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         Long requestId = new com.fasterxml.jackson.databind.ObjectMapper()

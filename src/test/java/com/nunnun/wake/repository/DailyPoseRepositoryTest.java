@@ -59,4 +59,25 @@ class DailyPoseRepositoryTest {
                 .extracting(Pose::getId)
                 .containsExactly(active.getId());
     }
+
+    @Test
+    void inactiveHandCrossIsExcludedFromNewCandidatesButExistingDailyPoseRemainsReadable() {
+        User creator = users.saveAndFlush(User.create("creator", "pose-history@example.com", "password-hash"));
+        WakeGroup group = wakeGroups.saveAndFlush(WakeGroup.create("Wake", "POSE03", creator));
+        Pose handCross = poses.saveAndFlush(Pose.create("HAND_CROSS", "poses/hand-cross.png", null));
+        Pose fingerLips = poses.saveAndFlush(Pose.create("FINGER_LIPS", "poses/finger-lips.png", null));
+        Pose lowCrouch = poses.saveAndFlush(Pose.create("LOW_CROUCH", "poses/low-crouch.png", null));
+        LocalDate date = LocalDate.of(2026, 8, 18);
+        DailyPose existing = dailyPoses.saveAndFlush(DailyPose.create(group, handCross, date));
+        jdbcTemplate.update("update poses set active = false where id = ?", handCross.getId());
+
+        org.assertj.core.api.Assertions.assertThat(poses.findAllByActiveTrue())
+                .extracting(Pose::getCode)
+                .containsExactlyInAnyOrder(fingerLips.getCode(), lowCrouch.getCode());
+        org.assertj.core.api.Assertions.assertThat(
+                        dailyPoses.findByWakeGroupIdAndPoseDate(group.getId(), date))
+                .get()
+                .extracting(DailyPose::getId)
+                .isEqualTo(existing.getId());
+    }
 }

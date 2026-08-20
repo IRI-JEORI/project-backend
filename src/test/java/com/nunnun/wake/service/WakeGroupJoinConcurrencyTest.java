@@ -69,6 +69,34 @@ class WakeGroupJoinConcurrencyTest {
                 .allMatch(slot -> slot >= 1 && slot <= 4);
     }
 
+    @Test
+    void concurrentJoinsAtThreeMembershipsNeverExceedUserLimit() throws Exception {
+        User candidate = user("limit-candidate@example.com");
+        for (int index = 0; index < 3; index++) {
+            WakeGroup existing = groups.saveAndFlush(WakeGroup.create(
+                    "Existing " + index, "EXST0" + index, candidate));
+            members.saveAndFlush(WakeGroupMember.join(existing, candidate, (short) 1));
+        }
+        User firstOwner = user("limit-owner-a@example.com");
+        User secondOwner = user("limit-owner-b@example.com");
+        WakeGroup firstTarget = groups.saveAndFlush(WakeGroup.create("Target A", "LMTA01", firstOwner));
+        WakeGroup secondTarget = groups.saveAndFlush(WakeGroup.create("Target B", "LMTB01", secondOwner));
+        members.saveAndFlush(WakeGroupMember.join(firstTarget, firstOwner, (short) 1));
+        members.saveAndFlush(WakeGroupMember.join(secondTarget, secondOwner, (short) 1));
+
+        List<Throwable> results = runTogether(
+                () -> wakeGroupService.joinWakeGroup(candidate.getId(), firstTarget.getInviteCode()),
+                () -> wakeGroupService.joinWakeGroup(candidate.getId(), secondTarget.getInviteCode())
+        );
+
+        assertThat(results).filteredOn(result -> result == null).hasSize(1);
+        assertThat(results).filteredOn(BusinessException.class::isInstance)
+                .singleElement()
+                .satisfies(result -> assertThat(((BusinessException) result).getErrorCode())
+                        .isEqualTo(ErrorCode.WAKE_GROUP_LIMIT_REACHED));
+        assertThat(members.countByUserId(candidate.getId())).isEqualTo(4);
+    }
+
     private List<Throwable> runTogether(ThrowingAction first, ThrowingAction second) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);

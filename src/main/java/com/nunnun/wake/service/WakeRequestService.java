@@ -14,6 +14,7 @@ import com.nunnun.wake.dto.WakeBlockReason;
 import com.nunnun.wake.entity.DailyPose;
 import com.nunnun.wake.entity.WakeGroup;
 import com.nunnun.wake.entity.WakeRequest;
+import com.nunnun.wake.entity.WakeRequestStatus;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
@@ -23,6 +24,7 @@ import java.time.ZonedDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -112,13 +114,13 @@ public class WakeRequestService {
     }
 
     @Transactional
-    public CreateSelfVerifyResponse createSelfVerify(Long userId) {
+    public CreateSelfVerifyResponse createSelfVerify(Long userId, Long groupId) {
         User user = userWriteGuard.lockActive(userId);
-        WakeGroup membershipGroup = wakeGroupMemberRepository.findByUserId(userId)
-                .map(member -> member.getWakeGroup())
+        WakeGroup group = wakeGroupRepository.findByIdForUpdate(groupId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
-        WakeGroup group = wakeGroupRepository.findByIdForUpdate(membershipGroup.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_GROUP_NOT_FOUND));
+        if (!wakeGroupMemberRepository.existsByWakeGroupIdAndUserId(groupId, userId)) {
+            throw new BusinessException(ErrorCode.WAKE_GROUP_ACCESS_DENIED);
+        }
         LocalDateTime now = LocalDateTime.now(clock);
         DailyPose dailyPose = dailyPoseService.getOrCreateDailyPose(group.getId(), now.toLocalDate());
         LocalDateTime targetWakeAt = wakeTargetSnapshotResolver.resolve(userId, now);
@@ -140,6 +142,22 @@ public class WakeRequestService {
                 request.getRequestedAt().toLocalDate()
         );
         return WakeRequestDetailResponse.from(request, dailyPose);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<WakeRequestDetailResponse> getPendingWakeRequest(Long userId) {
+        return wakeRequestRepository
+                .findFirstByReceiverIdAndStatusOrderByRequestedAtDescIdDesc(
+                        userId,
+                        WakeRequestStatus.SENT
+                )
+                .map(request -> WakeRequestDetailResponse.from(
+                        request,
+                        dailyPoseService.getDailyPose(
+                                request.getWakeGroup().getId(),
+                                request.getRequestedAt().toLocalDate()
+                        )
+                ));
     }
 
     private User findActiveUser(Long userId) {

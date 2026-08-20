@@ -41,26 +41,41 @@ public class WakeProofService {
     public CreateWakeProofResponse createWakeProof(Long userId, Long requestId, MultipartFile image) {
         validateImage(image);
         WakeProofPersistenceService.ProofPreparation preparation = persistenceService.prepare(requestId, userId);
-        String referenceUrl;
-        try {
-            referenceUrl = storage.createReadUrl(preparation.referenceImageObjectKey(), IMAGE_URL_VALIDITY);
-        } catch (WakeProofStorageException exception) {
-            throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
-        }
-
         String objectKey = createObjectKey(requestId, image.getContentType());
         try {
             storage.upload(objectKey, image);
         } catch (WakeProofStorageException exception) {
+            log.error("Wake proof image upload failed. requestId={}", requestId, exception);
             throw new BusinessException(ErrorCode.WAKE_PROOF_UPLOAD_FAILED);
         }
 
+        String submittedUrl;
         try {
-            String submittedUrl = storage.createReadUrl(objectKey, IMAGE_URL_VALIDITY);
-            int score = poseComparisonClient.compare(referenceUrl, submittedUrl, preparation.poseDescription());
-            if (score < 0 || score > 100) {
-                throw new IllegalArgumentException("Pose score is outside the supported range.");
-            }
+            submittedUrl = storage.createReadUrl(objectKey, IMAGE_URL_VALIDITY);
+        } catch (WakeProofStorageException exception) {
+            log.error("Wake proof analysis failed at submitted image read URL. requestId={}", requestId, exception);
+            safelyDeleteUploadedObject(objectKey);
+            throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
+        }
+
+        int score;
+        try {
+            score = poseComparisonClient.compare(submittedUrl, preparation.poseDescription());
+        } catch (RuntimeException exception) {
+            log.error("Wake proof analysis failed during OpenAI pose comparison. requestId={}", requestId, exception);
+            safelyDeleteUploadedObject(objectKey);
+            throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
+        }
+
+        if (score < 0 || score > 100) {
+            IllegalArgumentException exception =
+                    new IllegalArgumentException("Pose score is outside the supported range.");
+            log.error("Wake proof analysis returned an invalid score. requestId={}", requestId, exception);
+            safelyDeleteUploadedObject(objectKey);
+            throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
+        }
+
+        try {
             CreateWakeProofResponse response = persistenceService.applyResult(requestId, userId, objectKey, score);
             if (response.poseMatchResult() == PoseMatchResult.FAIL) {
                 safelyDeleteUploadedObject(objectKey);
@@ -70,6 +85,7 @@ public class WakeProofService {
             safelyDeleteUploadedObject(objectKey);
             throw exception;
         } catch (RuntimeException exception) {
+            log.error("Wake proof analysis failed while persisting the result. requestId={}", requestId, exception);
             safelyDeleteUploadedObject(objectKey);
             throw new BusinessException(ErrorCode.POSE_ANALYSIS_FAILED);
         }

@@ -22,7 +22,6 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @Table(
         name = "wake_group_members",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = "user_id"),
                 @UniqueConstraint(columnNames = {"wake_group_id", "user_id"}),
                 @UniqueConstraint(columnNames = {"wake_group_id", "slot_no"})
         }
