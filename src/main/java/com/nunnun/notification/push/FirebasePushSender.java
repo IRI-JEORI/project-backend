@@ -1,6 +1,7 @@
 package com.nunnun.notification.push;
 
 import com.google.firebase.messaging.BatchResponse;
+import com.google.firebase.messaging.AndroidConfig;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.MulticastMessage;
@@ -46,14 +47,22 @@ public class FirebasePushSender implements PushSender {
 
     private MulticastMessage firebaseMessage(PushMessage message, List<String> tokens) {
         MulticastMessage.Builder builder = MulticastMessage.builder()
-                .setNotification(com.google.firebase.messaging.Notification.builder()
-                        .setTitle(message.title())
-                        .setBody(message.body())
-                        .build())
                 .putData("type", message.type().name())
                 .addAllTokens(tokens);
         if (message.referenceId() != null) {
             builder.putData("referenceId", message.referenceId().toString());
+        }
+        if (message.type() == com.nunnun.notification.entity.NotificationType.WAKE_REQUEST) {
+            builder.putData("title", message.title());
+            builder.putData("body", message.body());
+            builder.setAndroidConfig(AndroidConfig.builder()
+                    .setPriority(AndroidConfig.Priority.HIGH)
+                    .build());
+        } else {
+            builder.setNotification(com.google.firebase.messaging.Notification.builder()
+                    .setTitle(message.title())
+                    .setBody(message.body())
+                    .build());
         }
         if (message.type() == com.nunnun.notification.entity.NotificationType.BEDTIME_REMINDER) {
             builder.putData("silent", "true");

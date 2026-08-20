@@ -6,11 +6,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.google.firebase.messaging.BatchResponse;
+import com.google.firebase.messaging.AndroidConfig;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.MulticastMessage;
 import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.SendResponse;
+import com.google.firebase.messaging.Notification;
 import com.nunnun.notification.entity.NotificationType;
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
@@ -76,7 +78,9 @@ class FirebasePushSenderTest {
                 501L
         ))).containsExactlyInAnyOrderEntriesOf(Map.of(
                 "type", "WAKE_REQUEST",
-                "referenceId", "501"
+                "referenceId", "501",
+                "title", "깨우기 요청",
+                "body", "친구가 깨우고 있어요."
         ));
 
         assertThat(dataFor(new PushMessage(
@@ -90,8 +94,62 @@ class FirebasePushSenderTest {
         ));
     }
 
+    @Test
+    void sendsWakeRequestsAsHighPriorityDataOnly() throws Exception {
+        PushMessage wakeRequest = new PushMessage(
+                "깨우기 요청",
+                "친구가 깨우고 있어요.",
+                NotificationType.WAKE_REQUEST,
+                501L
+        );
+
+        assertThat(androidPriorityFor(wakeRequest)).isEqualTo("high");
+        assertThat(notificationFor(wakeRequest)).isNull();
+
+        PushMessage bedtimeReminder = new PushMessage(
+                "취침 시간이 다가와요",
+                "기상까지 6시간 남았어요.",
+                NotificationType.BEDTIME_REMINDER,
+                null
+        );
+
+        assertThat(androidPriorityFor(bedtimeReminder)).isNull();
+        assertThat(notificationFor(bedtimeReminder)).isNotNull();
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, String> dataFor(PushMessage pushMessage) throws Exception {
+        return dataFrom(messageFor(pushMessage));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> dataFrom(MulticastMessage message) throws Exception {
+        Field data = MulticastMessage.class.getDeclaredField("data");
+        data.setAccessible(true);
+        return Map.copyOf((Map<String, String>) data.get(message));
+    }
+
+    private String androidPriorityFor(PushMessage pushMessage) throws Exception {
+        MulticastMessage message = messageFor(pushMessage);
+        Field androidConfig = MulticastMessage.class.getDeclaredField("androidConfig");
+        androidConfig.setAccessible(true);
+        AndroidConfig config = (AndroidConfig) androidConfig.get(message);
+        if (config == null) {
+            return null;
+        }
+        Field priority = AndroidConfig.class.getDeclaredField("priority");
+        priority.setAccessible(true);
+        return (String) priority.get(config);
+    }
+
+    private Notification notificationFor(PushMessage pushMessage) throws Exception {
+        MulticastMessage message = messageFor(pushMessage);
+        Field notification = MulticastMessage.class.getDeclaredField("notification");
+        notification.setAccessible(true);
+        return (Notification) notification.get(message);
+    }
+
+    private MulticastMessage messageFor(PushMessage pushMessage) throws Exception {
         FirebaseMessaging messaging = mock(FirebaseMessaging.class);
         BatchResponse batch = mock(BatchResponse.class);
         when(batch.getSuccessCount()).thenReturn(1);
@@ -107,9 +165,6 @@ class FirebasePushSenderTest {
         ArgumentCaptor<MulticastMessage> captor =
                 ArgumentCaptor.forClass(MulticastMessage.class);
         verify(messaging).sendEachForMulticast(captor.capture());
-
-        Field data = MulticastMessage.class.getDeclaredField("data");
-        data.setAccessible(true);
-        return Map.copyOf((Map<String, String>) data.get(captor.getValue()));
+        return captor.getValue();
     }
 }
