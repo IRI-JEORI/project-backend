@@ -25,6 +25,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -146,11 +147,10 @@ public class WakeRequestService {
 
     @Transactional(readOnly = true)
     public Optional<WakeRequestDetailResponse> getPendingWakeRequest(Long userId) {
-        return wakeRequestRepository
-                .findFirstByReceiverIdAndStatusOrderByRequestedAtDescIdDesc(
-                        userId,
-                        WakeRequestStatus.SENT
-                )
+        return wakeRequestRepository.findPendingExternalByReceiverId(
+                        userId, WakeRequestStatus.SENT, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
                 .map(request -> WakeRequestDetailResponse.from(
                         request,
                         dailyPoseService.getDailyPose(
@@ -158,6 +158,25 @@ public class WakeRequestService {
                                 request.getRequestedAt().toLocalDate()
                         )
                 ));
+    }
+
+    @Transactional
+    public void declineWakeRequest(Long userId, Long requestId) {
+        WakeRequest request = wakeRequestRepository.findByIdForUpdate(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAKE_REQUEST_NOT_FOUND));
+        if (!request.getReceiver().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.WAKE_REQUEST_ACCESS_DENIED);
+        }
+        if (request.getSender().getId().equals(request.getReceiver().getId())) {
+            throw new BusinessException(ErrorCode.INVALID_WAKE_REQUEST_STATUS);
+        }
+        if (request.getStatus() == WakeRequestStatus.NEEDS_HELP) {
+            return;
+        }
+        if (request.getStatus() != WakeRequestStatus.SENT) {
+            throw new BusinessException(ErrorCode.INVALID_WAKE_REQUEST_STATUS);
+        }
+        request.markNeedsHelp();
     }
 
     private User findActiveUser(Long userId) {

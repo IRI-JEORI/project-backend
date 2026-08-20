@@ -19,6 +19,12 @@ public class WakeGroupCardStateCalculator {
         boolean currentCycleSuccess = cycleStartedAt != null
                 && isAtOrAfter(facts.latestSuccessAt(), cycleStartedAt)
                 && !facts.latestSuccessAt().isAfter(facts.now());
+        boolean storedNeedsHelpIsCurrent = facts.latestStoredNeedsHelpAt() != null
+                && !facts.latestStoredNeedsHelpAt().isAfter(facts.now())
+                && (cycleStartedAt != null
+                        ? isAtOrAfter(facts.latestStoredNeedsHelpAt(), cycleStartedAt)
+                        : facts.latestSuccessAt() == null
+                                || facts.latestStoredNeedsHelpAt().isAfter(facts.latestSuccessAt()));
 
         if (currentCycleSuccess) {
             return new Result(WakeGroupCardState.AWAKE, facts.latestSuccessAt());
@@ -27,9 +33,7 @@ public class WakeGroupCardStateCalculator {
                 && !facts.now().isBefore(facts.todayTargetAt().plusMinutes(NEEDS_HELP_DELAY_MINUTES))) {
             return new Result(WakeGroupCardState.NEEDS_HELP, null);
         }
-        if (cycleStartedAt != null
-                && isAtOrAfter(facts.latestStoredNeedsHelpAt(), cycleStartedAt)
-                && !facts.latestStoredNeedsHelpAt().isAfter(facts.now())) {
+        if (storedNeedsHelpIsCurrent) {
             return new Result(WakeGroupCardState.NEEDS_HELP, null);
         }
         if (facts.latestSuccessAt() != null && !facts.latestSuccessAt().isAfter(facts.now())) {

@@ -49,6 +49,8 @@ public enum ErrorCode {
     RETRY_EXHAUSTED(HttpStatus.CONFLICT, "RETRY_EXHAUSTED", "All wake proof attempts have been used."),
     POSE_ANALYSIS_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "POSE_ANALYSIS_FAILED", "AI pose analysis failed."),
     INVALID_WAKE_REQUEST_STATUS(HttpStatus.CONFLICT, "INVALID_WAKE_REQUEST_STATUS", "Wake request status does not allow this operation."),
+    WAKE_PROOF_SHARE_NOT_ALLOWED(HttpStatus.CONFLICT, "WAKE_PROOF_SHARE_NOT_ALLOWED", "Only a successful wake proof can be shared."),
+    WAKE_PROOF_ORIGINAL_GROUP_REQUIRED(HttpStatus.BAD_REQUEST, "WAKE_PROOF_ORIGINAL_GROUP_REQUIRED", "The original wake group must be selected."),
     ROOMMATE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "ROOMMATE_GROUP_NOT_FOUND", "Roommate group not found."),
     ROOMMATE_GROUP_ALREADY_EXISTS(HttpStatus.CONFLICT, "ROOMMATE_GROUP_ALREADY_EXISTS", "User already belongs to a roommate group."),
     ROOMMATE_GROUP_FULL(HttpStatus.CONFLICT, "ROOMMATE_GROUP_FULL", "Roommate group is full."),

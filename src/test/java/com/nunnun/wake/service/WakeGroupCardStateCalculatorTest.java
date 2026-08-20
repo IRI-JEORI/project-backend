@@ -39,6 +39,44 @@ class WakeGroupCardStateCalculatorTest {
     }
 
     @Test
+    void appliesStoredNeedsHelpWithoutTodayTargetWhenThereIsNoSuccess() {
+        assertState(facts(TARGET, null, null, TARGET.minusMinutes(1), null),
+                WakeGroupCardState.NEEDS_HELP);
+    }
+
+    @Test
+    void appliesStoredNeedsHelpWithoutTodayTargetWhenItIsNewerThanSuccess() {
+        assertState(facts(TARGET, null, TARGET.minusMinutes(2), TARGET.minusMinutes(1), null),
+                WakeGroupCardState.NEEDS_HELP);
+    }
+
+    @Test
+    void keepsAwakeWithoutTodayTargetWhenSuccessIsNewerThanStoredNeedsHelp() {
+        assertState(facts(TARGET, null, TARGET.minusMinutes(1), TARGET.minusMinutes(2), null),
+                WakeGroupCardState.AWAKE);
+    }
+
+    @Test
+    void doesNotApplyFutureStoredNeedsHelpWithoutTodayTarget() {
+        assertState(facts(TARGET, null, null, TARGET.plusSeconds(1), null),
+                WakeGroupCardState.NORMAL);
+    }
+
+    @Test
+    void doesNotApplyStoredNeedsHelpBeforeCurrentTargetCycle() {
+        LocalDateTime cycleStart = TARGET.minusHours(8);
+        assertState(facts(TARGET.minusMinutes(30), TARGET, null, cycleStart.minusSeconds(1), null),
+                WakeGroupCardState.NORMAL);
+    }
+
+    @Test
+    void appliesStoredNeedsHelpFromCurrentTargetCycle() {
+        LocalDateTime cycleStart = TARGET.minusHours(8);
+        assertState(facts(TARGET.minusMinutes(30), TARGET, null, cycleStart, null),
+                WakeGroupCardState.NEEDS_HELP);
+    }
+
+    @Test
     void currentCycleSuccessWinsOverDerivedAndStoredNeedsHelp() {
         LocalDateTime success = TARGET.plusMinutes(1);
         WakeGroupCardStateCalculator.Result result = calculator.calculate(facts(

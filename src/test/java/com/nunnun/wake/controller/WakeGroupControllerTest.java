@@ -36,6 +36,7 @@ import com.nunnun.wake.repository.PoseRepository;
 import com.nunnun.wake.repository.WakeGroupMemberRepository;
 import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
+import com.nunnun.wake.repository.WakeProofShareRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
@@ -77,6 +78,7 @@ class WakeGroupControllerTest {
     @Autowired private WakeGroupMemberRepository wakeGroupMemberRepository;
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
+    @Autowired private WakeProofShareRepository wakeProofShareRepository;
     @Autowired private DailyPoseRepository dailyPoseRepository;
     @Autowired private PoseRepository poseRepository;
     @Autowired private NotificationRepository notificationRepository;
@@ -625,6 +627,7 @@ class WakeGroupControllerTest {
     private void clearData() {
         notificationRepository.deleteAllInBatch();
         dndWindowRepository.deleteAllInBatch();
+        wakeProofShareRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
         dailyPoseRepository.deleteAllInBatch();

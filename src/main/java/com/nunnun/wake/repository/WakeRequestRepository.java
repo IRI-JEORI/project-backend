@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> {
@@ -23,9 +24,18 @@ public interface WakeRequestRepository extends JpaRepository<WakeRequest, Long> 
     Optional<WakeRequest> findDetailById(@Param("id") Long id);
 
     @EntityGraph(attributePaths = {"sender", "receiver", "wakeGroup"})
-    Optional<WakeRequest> findFirstByReceiverIdAndStatusOrderByRequestedAtDescIdDesc(
-            Long receiverId,
-            WakeRequestStatus status
+    @Query("""
+            select request
+            from WakeRequest request
+            where request.receiver.id = :receiverId
+              and request.status = :status
+              and request.sender.id <> request.receiver.id
+            order by request.requestedAt desc, request.id desc
+            """)
+    List<WakeRequest> findPendingExternalByReceiverId(
+            @Param("receiverId") Long receiverId,
+            @Param("status") WakeRequestStatus status,
+            Pageable pageable
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -42,6 +42,7 @@ import com.nunnun.wake.repository.WakeGroupRepository;
 import com.nunnun.wake.repository.DailyPoseRepository;
 import com.nunnun.wake.repository.PoseRepository;
 import com.nunnun.wake.repository.WakeProofRepository;
+import com.nunnun.wake.repository.WakeProofShareRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import com.nunnun.wake.service.WakeProofCleanupService;
 import com.nunnun.wake.storage.WakeProofStorage;
@@ -84,6 +85,7 @@ class WakeRequestControllerTest {
     @Autowired private WakeGroupMemberRepository wakeGroupMemberRepository;
     @Autowired private WakeRequestRepository wakeRequestRepository;
     @Autowired private WakeProofRepository wakeProofRepository;
+    @Autowired private WakeProofShareRepository wakeProofShareRepository;
     @Autowired private DailyPoseRepository dailyPoseRepository;
     @Autowired private PoseRepository poseRepository;
     @Autowired private WakeProofCleanupService wakeProofCleanupService;
@@ -318,6 +320,147 @@ class WakeRequestControllerTest {
         assertThat(proof.getImageObjectKey()).doesNotContain("http");
         assertThat(wakeRequestRepository.findById(request.getId()).orElseThrow().getStatus()).isEqualTo(WakeRequestStatus.VERIFIED);
         verify(wakeProofStorage).upload(anyString(), any());
+    }
+
+    @Test
+    void sharesSuccessfulProofWithMultipleMemberGroupsAndDeduplicatesIds() throws Exception {
+        User sender = saveUser("share-sender@example.com");
+        User receiver = saveUser("share-receiver@example.com");
+        WakeGroup original = createGroup(sender, receiver);
+        WakeGroup second = createSingleMemberGroup(receiver, "SHR002");
+        WakeGroup third = createSingleMemberGroup(receiver, "SHR003");
+        WakeRequest request = verifiedRequest(
+                original, sender, receiver, NOW.plusHours(8), NOW.minusMinutes(5), "wake-proofs/share.jpg"
+        );
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + "," + second.getId()
+                                + "," + second.getId() + "," + third.getId() + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.group_ids.length()").value(3));
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + "," + second.getId()
+                                + "," + third.getId() + "]}"))
+                .andExpect(status().isOk());
+
+        assertThat(wakeProofShareRepository.findAllByWakeProofId(
+                wakeProofRepository.findByWakeRequestId(request.getId()).orElseThrow().getId()
+        )).extracting(share -> share.getWakeGroup().getId())
+                .containsExactlyInAnyOrder(original.getId(), second.getId(), third.getId());
+    }
+
+    @Test
+    void rejectsSharingWithAnotherUsersGroupOrWithoutOriginalGroup() throws Exception {
+        User sender = saveUser("share-owner-sender@example.com");
+        User receiver = saveUser("share-owner-receiver@example.com");
+        User outsider = saveUser("share-outsider@example.com");
+        WakeGroup original = createGroup(sender, receiver);
+        WakeGroup foreign = createSingleMemberGroup(outsider, "FORGN1");
+        WakeRequest request = verifiedRequest(
+                original, sender, receiver, NOW.plusHours(8), NOW.minusMinutes(5), "wake-proofs/owner.jpg"
+        );
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + "," + foreign.getId() + "]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_ACCESS_DENIED"));
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + foreign.getId() + "]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("WAKE_PROOF_ORIGINAL_GROUP_REQUIRED"));
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(sender))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + "]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_REQUEST_ACCESS_DENIED"));
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + ",999999]}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("WAKE_GROUP_NOT_FOUND"));
+    }
+
+    @Test
+    void rejectsSharingProofThatDidNotSucceed() throws Exception {
+        User sender = saveUser("share-fail-sender@example.com");
+        User receiver = saveUser("share-fail-receiver@example.com");
+        WakeRequest request = createRequest(sender, receiver);
+        wakeProofRepository.saveAndFlush(WakeProof.record(
+                request, null, 30, PoseMatchResult.FAIL, NOW.minusMinutes(1)
+        ));
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + request.getWakeGroup().getId() + "]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("WAKE_PROOF_SHARE_NOT_ALLOWED"));
+    }
+
+    @Test
+    void exposesProofOnlyInOriginalAndSelectedGroupsIncludingSelfVerifyProofs() throws Exception {
+        User sender = saveUser("share-card-sender@example.com");
+        User receiver = saveUser("share-card-receiver@example.com");
+        WakeGroup original = createGroup(sender, receiver);
+        WakeGroup selected = createSingleMemberGroup(receiver, "SELECT");
+        WakeGroup unselected = createSingleMemberGroup(receiver, "UNSELE");
+        WakeRequest request = verifiedRequest(
+                original, sender, receiver, NOW.plusHours(8), NOW.minusMinutes(5), "wake-proofs/card-share.jpg"
+        );
+        when(wakeProofStorage.createReadUrl(anyString(), any())).thenReturn("https://signed.example/shared");
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(receiver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + "," + selected.getId() + "]}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/wake-groups/{id}", selected.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[0].state").value("AWAKE"))
+                .andExpect(jsonPath("$.data.members[0].proof_image_url").value("https://signed.example/shared"));
+        mockMvc.perform(get("/wake-groups/{id}", unselected.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[0].state").value("NORMAL"))
+                .andExpect(jsonPath("$.data.members[0].proof_image_url").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void sharesSuccessfulSelfVerifyProofThroughTheSameContract() throws Exception {
+        User user = saveUser("self-share@example.com");
+        WakeGroup original = createSingleMemberGroup(user, "SELF12");
+        WakeGroup selected = createSingleMemberGroup(user, "SELF13");
+        WakeRequest request = wakeRequestRepository.saveAndFlush(WakeRequest.send(
+                original, user, user, NOW.minusMinutes(6), NOW.plusHours(8)
+        ));
+        request.recordProofResult(true);
+        wakeRequestRepository.saveAndFlush(request);
+        wakeProofRepository.saveAndFlush(WakeProof.record(
+                request, "wake-proofs/self-share.jpg", 93, PoseMatchResult.SUCCESS, NOW.minusMinutes(5)
+        ));
+
+        mockMvc.perform(post("/wake-requests/{id}/proof/share", request.getId())
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_ids\":[" + original.getId() + "," + selected.getId() + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.group_ids.length()").value(2));
     }
 
     @Test
@@ -717,6 +860,98 @@ class WakeRequestControllerTest {
     }
 
     @Test
+    void pendingWakeRequestExcludesSelfVerifyAndReturnsLatestExternalRequest() throws Exception {
+        User sender = saveUser("pending-external-sender@example.com");
+        User receiver = saveUser("pending-self-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest external = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(1))
+        );
+        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, receiver, receiver, NOW));
+        dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
+
+        mockMvc.perform(get("/me/wake-requests/pending").header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(external.getId()))
+                .andExpect(jsonPath("$.data.sender.id").value(sender.getId()))
+                .andExpect(jsonPath("$.data.receiver.id").value(receiver.getId()));
+    }
+
+    @Test
+    void receiverDeclinesSentExternalRequestWithoutAttemptOrProofAndItLeavesPending() throws Exception {
+        User sender = saveUser("decline-sender@example.com");
+        User receiver = saveUser("decline-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest request = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW)
+        );
+        dailyPoseRepository.saveAndFlush(DailyPose.create(group, activePose, NOW.toLocalDate()));
+
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", request.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        WakeRequest declined = wakeRequestRepository.findById(request.getId()).orElseThrow();
+        assertThat(declined.getStatus()).isEqualTo(WakeRequestStatus.NEEDS_HELP);
+        assertThat(declined.getAttemptCount()).isZero();
+        assertThat(wakeProofRepository.findByWakeRequestId(request.getId())).isEmpty();
+
+        mockMvc.perform(get("/me/wake-requests/pending").header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+
+        mockMvc.perform(get("/wake-groups/{groupId}", group.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.members[1].state").value("NEEDS_HELP"));
+    }
+
+    @Test
+    void declineEnforcesReceiverExternalAndStatusRulesAndIsIdempotentForNeedsHelp() throws Exception {
+        User sender = saveUser("decline-rules-sender@example.com");
+        User receiver = saveUser("decline-rules-receiver@example.com");
+        User outsider = saveUser("decline-rules-outsider@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest sent = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW));
+        WakeRequest self = wakeRequestRepository.saveAndFlush(WakeRequest.send(group, receiver, receiver, NOW));
+        WakeRequest verified = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(1))
+        );
+        verified.verify();
+        wakeRequestRepository.saveAndFlush(verified);
+
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", sent.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_REQUEST_ACCESS_DENIED"));
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", sent.getId())
+                        .header("Authorization", bearer(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_REQUEST_ACCESS_DENIED"));
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", self.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVALID_WAKE_REQUEST_STATUS"));
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", verified.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVALID_WAKE_REQUEST_STATUS"));
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", 999999L)
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("WAKE_REQUEST_NOT_FOUND"));
+
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", sent.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/wake-requests/{requestId}/decline", sent.getId())
+                        .header("Authorization", bearer(receiver)))
+                .andExpect(status().isOk());
+        assertThat(wakeRequestRepository.findById(sent.getId()).orElseThrow().getAttemptCount()).isZero();
+    }
+
+    @Test
     void selfVerifyUsesTheRequestedGroupWhenUserHasMultipleMemberships() throws Exception {
         User user = saveUser("self-multiple@example.com");
         WakeGroup groupA = createSingleMemberGroup(user, "SELFA1");
@@ -868,9 +1103,113 @@ class WakeRequestControllerTest {
                 user.getId(), NOW.minusMinutes(30))).isTrue();
     }
 
+    @Test
+    void returnsNewestPendingSenderSuccessAndExposesNextAfterIdempotentAck() throws Exception {
+        User sender = saveUser("success-sender@example.com");
+        User receiver = saveUser("success-receiver@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest older = verifiedRequest(
+                group, sender, receiver, null, NOW.minusMinutes(10), "wake-proofs/older.jpg"
+        );
+        WakeRequest newer = verifiedRequest(
+                group, sender, receiver, null, NOW.minusMinutes(5), "wake-proofs/newer.jpg"
+        );
+
+        wakeRequestRepository.saveAndFlush(WakeRequest.send(group, sender, receiver, NOW.minusMinutes(2)));
+        WakeRequest selfVerify = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, sender, NOW.minusMinutes(4))
+        );
+        selfVerify.recordProofResult(true);
+        wakeRequestRepository.saveAndFlush(selfVerify);
+        wakeProofRepository.saveAndFlush(WakeProof.record(
+                selfVerify, "wake-proofs/self.jpg", 90, PoseMatchResult.SUCCESS, NOW.minusMinutes(3)
+        ));
+        verifiedRequest(group, receiver, sender, null, NOW.minusMinutes(1), "wake-proofs/other-sender.jpg");
+
+        WakeRequest needsHelp = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(3))
+        );
+        needsHelp.recordProofResult(false);
+        needsHelp.recordProofResult(false);
+        wakeRequestRepository.saveAndFlush(needsHelp);
+        wakeProofRepository.saveAndFlush(WakeProof.record(
+                needsHelp, "wake-proofs/fail.jpg", 20, PoseMatchResult.FAIL, NOW.minusMinutes(2)
+        ));
+
+        WakeGroup otherGroup = wakeGroupRepository.saveAndFlush(
+                WakeGroup.create("Other", "OTHER1", sender)
+        );
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(otherGroup, sender, (short) 1));
+        wakeGroupMemberRepository.saveAndFlush(WakeGroupMember.join(otherGroup, receiver, (short) 2));
+        verifiedRequest(
+                otherGroup, sender, receiver, null, NOW, "wake-proofs/other-group.jpg"
+        );
+
+        mockMvc.perform(get("/wake-groups/{groupId}/wake-successes/pending", group.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.wake_request_id").value(newer.getId()))
+                .andExpect(jsonPath("$.data.group_id").value(group.getId()))
+                .andExpect(jsonPath("$.data.receiver.id").value(receiver.getId()))
+                .andExpect(jsonPath("$.data.receiver.nickname").value(receiver.getNickname()))
+                .andExpect(jsonPath("$.data.verified_at").value("2026-08-12T23:35:00+09:00"));
+
+        mockMvc.perform(post("/wake-requests/{requestId}/success/ack", newer.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/wake-requests/{requestId}/success/ack", newer.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isOk());
+
+        WakeRequest acknowledged = wakeRequestRepository.findById(newer.getId()).orElseThrow();
+        assertThat(acknowledged.isSenderSuccessAcknowledged()).isTrue();
+        assertThat(acknowledged.getSenderSuccessAcknowledgedAt()).isEqualTo(NOW);
+
+        mockMvc.perform(get("/wake-groups/{groupId}/wake-successes/pending", group.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.wake_request_id").value(older.getId()));
+    }
+
+    @Test
+    void pendingSuccessRequiresSuccessProofAndAckRejectsOtherUsersAndInvalidRequests() throws Exception {
+        User sender = saveUser("success-auth-sender@example.com");
+        User receiver = saveUser("success-auth-receiver@example.com");
+        User outsider = saveUser("success-auth-outsider@example.com");
+        WakeGroup group = createGroup(sender, receiver);
+        WakeRequest noProof = wakeRequestRepository.saveAndFlush(
+                WakeRequest.send(group, sender, receiver, NOW.minusMinutes(1))
+        );
+        noProof.verify();
+        wakeRequestRepository.saveAndFlush(noProof);
+
+        mockMvc.perform(get("/wake-groups/{groupId}/wake-successes/pending", group.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+
+        mockMvc.perform(post("/wake-requests/{requestId}/success/ack", noProof.getId())
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVALID_WAKE_REQUEST_STATUS"));
+
+        WakeRequest success = verifiedRequest(
+                group, sender, receiver, null, NOW, "wake-proofs/authorized.jpg"
+        );
+        mockMvc.perform(post("/wake-requests/{requestId}/success/ack", success.getId())
+                        .header("Authorization", bearer(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("WAKE_REQUEST_ACCESS_DENIED"));
+        mockMvc.perform(post("/wake-requests/{requestId}/success/ack", 999999L)
+                        .header("Authorization", bearer(sender)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("WAKE_REQUEST_NOT_FOUND"));
+    }
+
     private void clearData() {
         notificationRepository.deleteAllInBatch();
         dndWindowRepository.deleteAllInBatch();
+        wakeProofShareRepository.deleteAllInBatch();
         wakeProofRepository.deleteAllInBatch();
         wakeRequestRepository.deleteAllInBatch();
         dailyPoseRepository.deleteAllInBatch();

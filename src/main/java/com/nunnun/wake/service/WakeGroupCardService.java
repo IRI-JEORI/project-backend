@@ -9,9 +9,11 @@ import com.nunnun.wake.dto.WakeGroupMemberResponse;
 import com.nunnun.wake.entity.PoseMatchResult;
 import com.nunnun.wake.entity.WakeGroupMember;
 import com.nunnun.wake.entity.WakeProof;
+import com.nunnun.wake.entity.WakeProofShare;
 import com.nunnun.wake.entity.WakeRequest;
 import com.nunnun.wake.entity.WakeRequestStatus;
 import com.nunnun.wake.repository.WakeProofRepository;
+import com.nunnun.wake.repository.WakeProofShareRepository;
 import com.nunnun.wake.repository.WakeRequestRepository;
 import com.nunnun.wake.storage.WakeProofStorage;
 import com.nunnun.wake.storage.WakeProofStorageException;
@@ -41,6 +43,7 @@ public class WakeGroupCardService {
     private final WeeklyWakeTargetRepository weeklyWakeTargets;
     private final WakeRequestRepository wakeRequests;
     private final WakeProofRepository wakeProofs;
+    private final WakeProofShareRepository wakeProofShares;
     private final NextWakeTargetCalculator nextWakeTargetCalculator;
     private final WakeGroupCardStateCalculator stateCalculator;
     private final WakeEligibilityPolicy eligibilityPolicy;
@@ -52,6 +55,7 @@ public class WakeGroupCardService {
             WeeklyWakeTargetRepository weeklyWakeTargets,
             WakeRequestRepository wakeRequests,
             WakeProofRepository wakeProofs,
+            WakeProofShareRepository wakeProofShares,
             NextWakeTargetCalculator nextWakeTargetCalculator,
             WakeGroupCardStateCalculator stateCalculator,
             WakeEligibilityPolicy eligibilityPolicy,
@@ -62,6 +66,7 @@ public class WakeGroupCardService {
         this.weeklyWakeTargets = weeklyWakeTargets;
         this.wakeRequests = wakeRequests;
         this.wakeProofs = wakeProofs;
+        this.wakeProofShares = wakeProofShares;
         this.nextWakeTargetCalculator = nextWakeTargetCalculator;
         this.stateCalculator = stateCalculator;
         this.eligibilityPolicy = eligibilityPolicy;
@@ -88,6 +93,10 @@ public class WakeGroupCardService {
                         proof -> proof.getWakeRequest().getId(),
                         Function.identity()
                 ));
+        Map<Long, List<WakeProof>> sharedProofsByReceiver = wakeProofShares.findAllByWakeGroupId(groupId)
+                .stream()
+                .map(WakeProofShare::getWakeProof)
+                .collect(Collectors.groupingBy(proof -> proof.getWakeRequest().getReceiver().getId()));
         Set<Long> dndActiveUserIds = dndWindowService.findDndActiveUserIds(userIds, zonedNow);
 
         return members.stream()
@@ -97,6 +106,7 @@ public class WakeGroupCardService {
                         targetsByUser.getOrDefault(member.getUser().getId(), List.of()),
                         requestsByReceiver.getOrDefault(member.getUser().getId(), List.of()),
                         proofsByRequest,
+                        sharedProofsByReceiver.getOrDefault(member.getUser().getId(), List.of()),
                         dndActiveUserIds.contains(member.getUser().getId()),
                         now
                 ))
@@ -109,6 +119,7 @@ public class WakeGroupCardService {
             List<WeeklyWakeTarget> targets,
             List<WakeRequest> requests,
             Map<Long, WakeProof> proofsByRequest,
+            List<WakeProof> sharedProofs,
             boolean dndActive,
             LocalDateTime now
     ) {
@@ -118,7 +129,7 @@ public class WakeGroupCardService {
                 .map(target -> LocalDateTime.of(now.toLocalDate(), target.getTargetWakeTime()))
                 .orElse(null);
         LocalDateTime nextTargetAt = nextWakeTargetCalculator.calculate(targets, now).orElse(null);
-        WakeProof latestSuccessProof = latestSuccessProof(requests, proofsByRequest, now);
+        WakeProof latestSuccessProof = latestSuccessProof(requests, proofsByRequest, sharedProofs, now);
         LocalDateTime latestSuccessAt = latestSuccessProof == null ? null : latestSuccessProof.getVerifiedAt();
         LocalDateTime latestNeedsHelpAt = requests.stream()
                 .filter(request -> request.getStatus() == WakeRequestStatus.NEEDS_HELP)
@@ -166,12 +177,16 @@ public class WakeGroupCardService {
     private WakeProof latestSuccessProof(
             Collection<WakeRequest> requests,
             Map<Long, WakeProof> proofsByRequest,
+            List<WakeProof> sharedProofs,
             LocalDateTime now
     ) {
-        return requests.stream()
+        Collection<WakeProof> localProofs = requests.stream()
                 .filter(request -> request.getStatus() == WakeRequestStatus.VERIFIED)
                 .map(request -> proofsByRequest.get(request.getId()))
-                .filter(proof -> proof != null
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        return java.util.stream.Stream.concat(localProofs.stream(), sharedProofs.stream())
+                .filter(proof -> proof.getWakeRequest().getStatus() == WakeRequestStatus.VERIFIED
                         && proof.getPoseMatchResult() == PoseMatchResult.SUCCESS
                         && proof.getVerifiedAt() != null
                         && !proof.getVerifiedAt().isAfter(now))

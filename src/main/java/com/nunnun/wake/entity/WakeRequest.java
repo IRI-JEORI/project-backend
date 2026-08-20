@@ -54,6 +54,9 @@ public class WakeRequest {
     @Column(name = "target_wake_at")
     private LocalDateTime targetWakeAt;
 
+    @Column(name = "sender_success_acknowledged_at")
+    private LocalDateTime senderSuccessAcknowledgedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -99,6 +102,16 @@ public class WakeRequest {
         this.status = WakeRequestStatus.VERIFIED;
     }
 
+    public void acknowledgeSenderSuccess(LocalDateTime acknowledgedAt) {
+        if (senderSuccessAcknowledgedAt == null) {
+            senderSuccessAcknowledgedAt = Objects.requireNonNull(acknowledgedAt);
+        }
+    }
+
+    public boolean isSenderSuccessAcknowledged() {
+        return senderSuccessAcknowledgedAt != null;
+    }
+
     public short recordProofResult(boolean successful) {
         if (!canBeVerified() || attemptCount >= 2) {
             throw new IllegalStateException("Wake request does not accept another proof.");
@@ -112,6 +125,13 @@ public class WakeRequest {
         return attemptCount;
     }
 
+    public void markNeedsHelp() {
+        if (status != WakeRequestStatus.SENT) {
+            throw new IllegalStateException("Only a sent wake request can be declined.");
+        }
+        status = WakeRequestStatus.NEEDS_HELP;
+    }
+
     public Long getId() { return id; }
     public WakeGroup getWakeGroup() { return wakeGroup; }
     public User getSender() { return sender; }
@@ -120,5 +140,6 @@ public class WakeRequest {
     public Short getAttemptCount() { return attemptCount; }
     public LocalDateTime getRequestedAt() { return requestedAt; }
     public LocalDateTime getTargetWakeAt() { return targetWakeAt; }
+    public LocalDateTime getSenderSuccessAcknowledgedAt() { return senderSuccessAcknowledgedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

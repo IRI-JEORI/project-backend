@@ -40,6 +40,27 @@ public interface WakeProofRepository extends JpaRepository<WakeProof, Long> {
 
     Optional<WakeProof> findByWakeRequestId(Long wakeRequestId);
 
+    boolean existsByWakeRequestIdAndPoseMatchResult(Long wakeRequestId, PoseMatchResult poseMatchResult);
+
+    @Query("""
+            select proof from WakeProof proof
+            join fetch proof.wakeRequest request
+            join fetch request.receiver
+            where request.wakeGroup.id = :groupId
+              and request.sender.id = :senderId
+              and request.sender.id <> request.receiver.id
+              and request.status = com.nunnun.wake.entity.WakeRequestStatus.VERIFIED
+              and request.senderSuccessAcknowledgedAt is null
+              and proof.poseMatchResult = com.nunnun.wake.entity.PoseMatchResult.SUCCESS
+              and proof.verifiedAt is not null
+            order by proof.verifiedAt desc, request.id desc
+            """)
+    List<WakeProof> findPendingSenderSuccesses(
+            @Param("groupId") Long groupId,
+            @Param("senderId") Long senderId,
+            Pageable pageable
+    );
+
     List<WakeProof> findAllByPoseMatchResultAndImageObjectKeyIsNotNullAndExpiresAtIsNotNullAndExpiresAtLessThanEqualOrderByIdAsc(
             PoseMatchResult poseMatchResult,
             LocalDateTime now,
