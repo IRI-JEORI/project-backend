@@ -3,3 +3,29 @@ build/
 out/
 .idea/
 *.iml
+
+# Local/runtime secrets (commit only the documented placeholder template)
+.env
+.env.*
+!.env.example
+firebase-admin.json
+**/firebase-admin.json
+*secret*.json
+*credentials*.json
+
+# Database and production backups (Flyway migrations remain trackable)
+*.sql
+!src/main/resources/db/migration/*.sql
+backup/
+backups/
+production-backup/
+production-backups/
+NUNNUN-production-backup-*/
+
+# Signing keys and private certificates
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key

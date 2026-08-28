@@ -1,0 +1,33 @@
+[Unit]
+Description=NUNNUN Spring Boot Backend
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Create this non-login system user on the new server.
+User=nunnun
+Group=nunnun
+WorkingDirectory=/opt/nunnun
+
+# Populate this protected file from .env.example and chmod it 600 (or 640
+# with an appropriate group). Never place it in the Git working tree.
+EnvironmentFile=/etc/nunnun/nunnun.env
+
+# The project is named nunnun and versioned 0.0.1-SNAPSHOT in build.gradle.
+ExecStart=/usr/bin/java -jar /opt/nunnun/build/libs/nunnun-0.0.1-SNAPSHOT.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Basic hardening. The service still needs write access to its runtime/JVM
+# temporary locations and network access to MySQL, AWS, OpenAI, and Firebase.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target
